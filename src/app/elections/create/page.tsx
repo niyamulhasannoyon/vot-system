@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,13 +17,16 @@ import {
   ArrowLeft,
   Users,
   ShieldAlert,
-  Info,
+  Upload,
+  Sparkles,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useLanguage } from "@/i18n/LanguageContext";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
 import { Stepper } from "@/components/ui/Stepper";
+import { useToast } from "@/components/ui/Toast";
 
 interface Candidate {
   id: string;
@@ -33,9 +36,10 @@ interface Candidate {
   bio: string;
 }
 
-export default function CreateElectionPage() {
+function CreateElectionContent() {
   const { locale, formatNum, t } = useLanguage();
   const router = useRouter();
+  const toast = useToast();
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -56,14 +60,14 @@ export default function CreateElectionPage() {
       name: "Tanvir Ahmed",
       nameBn: "তানভীর আহমেদ",
       symbolEmoji: "⚽",
-      bio: "Roll 01",
+      bio: "Roll 01 • Sports & discipline",
     },
     {
       id: "2",
       name: "Sadia Jahan",
       nameBn: "সাদিয়া জাহান",
       symbolEmoji: "📚",
-      bio: "Roll 03",
+      bio: "Roll 03 • Academic notes coordinator",
     },
   ]);
 
@@ -96,7 +100,6 @@ export default function CreateElectionPage() {
 
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Stepper definition
   const steps = [
     { id: 1, title: t("wizardStep1") },
     { id: 2, title: t("wizardStep2") },
@@ -104,7 +107,6 @@ export default function CreateElectionPage() {
     { id: 4, title: t("wizardStep4") },
   ];
 
-  // Candidates manipulation
   const addCandidate = () => {
     const emojis = ["⚽", "📚", "🕊️", "🌟", "🚢", "🌾", "🇧🇩", "🖊️", "🎓"];
     const randomEmoji = emojis[candidates.length % emojis.length];
@@ -128,13 +130,33 @@ export default function CreateElectionPage() {
 
   const removeCandidate = (id: string) => {
     if (candidates.length <= 2) {
-      alert(locale === "bn" ? "কমপক্ষে ২টি প্রার্থী থাকতে হবে।" : "Minimum 2 candidates required.");
+      toast.error(locale === "bn" ? "কমপক্ষে ২টি প্রার্থী থাকতে হবে।" : "Minimum 2 candidates required.");
       return;
     }
     setCandidates(candidates.filter((c) => c.id !== id));
   };
 
-  // Step Validations
+  // CSV File Uploader Handler
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        const cleaned = content
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join("\n");
+        setVoterListRaw(cleaned);
+        toast.success(locale === "bn" ? "ভোটার তালিকা সফলভাবে আপলোড হয়েছে!" : "Voter roster uploaded successfully!");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const validateStep = (current: number): boolean => {
     setError(null);
     if (current === 1) {
@@ -145,7 +167,7 @@ export default function CreateElectionPage() {
     } else if (current === 2) {
       const validCand = candidates.filter((c) => c.name.trim().length > 0);
       if (validCand.length < 2) {
-        setError(locale === "bn" ? "কমপক্ষে ২টি প্রার্থীর নাম সঠিকভাবে লিখুন।" : "Please enter at least 2 valid candidate names.");
+        setError(locale === "bn" ? "কমপক্ষে ২টি প্রার্থীর নাম সঠিকভাবে লিখুন।" : "Please enter at least 2 candidate names.");
         return false;
       }
     } else if (current === 3) {
@@ -215,6 +237,8 @@ export default function CreateElectionPage() {
         votersCount: data.votersCount,
         qrDataUrl,
       });
+
+      toast.success(t("createdSuccessTitle"));
     } catch (err: any) {
       setError(err.message || t("errorGeneric"));
     } finally {
@@ -227,10 +251,10 @@ export default function CreateElectionPage() {
     const voteUrl = `${window.location.origin}/vote/${createdResult.joinCode}`;
     navigator.clipboard.writeText(voteUrl);
     setCopiedLink(true);
+    toast.success(t("copiedToast"));
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  // If successfully created, show celebratory launch screen
   if (createdResult) {
     const voteUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/vote/${createdResult.joinCode}`;
     const whatsappText = encodeURIComponent(
@@ -240,7 +264,7 @@ export default function CreateElectionPage() {
     );
 
     return (
-      <div className="max-w-2xl mx-auto px-4 py-12">
+      <div className="max-w-2xl mx-auto px-4 py-12 animate-fade-in">
         <Card className="text-center p-8 space-y-6 border-2 border-emerald-500/30">
           <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-8 h-8" />
@@ -275,7 +299,7 @@ export default function CreateElectionPage() {
               />
               <span className="text-xs text-slate-500 mt-2">
                 {locale === "bn"
-                  ? "ভোটাররা মোবাইল ক্যামেরা দিয়ে স্ক্যান করলেই ব্যালট খুলবে"
+                  ? "স্মার্টফোন ক্যামেরা দিয়ে স্ক্যান করলেই ব্যালট খুলবে"
                   : "Scan with any smartphone camera to open ballot"}
               </span>
             </div>
@@ -365,20 +389,16 @@ export default function CreateElectionPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
-                {t("fieldTitle")}
-              </label>
-              <input
-                type="text"
+              <Input
+                label={t("fieldTitle")}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={t("fieldTitlePlaceholder")}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
                 {t("fieldDesc")}
               </label>
               <textarea
@@ -386,19 +406,19 @@ export default function CreateElectionPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("fieldDescPlaceholder")}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
                   {t("fieldCategory")}
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
                 >
                   <option value="class">{t("catClass")}</option>
                   <option value="club">{t("catClub")}</option>
@@ -408,13 +428,13 @@ export default function CreateElectionPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
                   {t("fieldType")}
                 </label>
                 <select
                   value={electionType}
                   onChange={(e) => setElectionType(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
                 >
                   <option value="SINGLE">{t("typeSingle")}</option>
                   <option value="MULTIPLE">{t("typeMultiple")}</option>
@@ -447,7 +467,6 @@ export default function CreateElectionPage() {
                 key={cand.id}
                 className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col sm:flex-row items-center gap-3"
               >
-                {/* Emoji / Symbol picker input */}
                 <div className="w-14 shrink-0">
                   <input
                     type="text"
@@ -456,12 +475,11 @@ export default function CreateElectionPage() {
                       updateCandidate(cand.id, "symbolEmoji", e.target.value)
                     }
                     placeholder="⚽"
-                    title="প্রতীক বা ইমোজি"
+                    title="Symbol or Emoji"
                     className="w-12 h-12 text-center text-2xl rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-[#006A4E]"
                   />
                 </div>
 
-                {/* Candidate Name & Bio */}
                 <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="text"
@@ -483,7 +501,6 @@ export default function CreateElectionPage() {
                   />
                 </div>
 
-                {/* Delete button */}
                 <button
                   type="button"
                   onClick={() => removeCandidate(cand.id)}
@@ -531,7 +548,7 @@ export default function CreateElectionPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-[#006A4E]" />
                   {t("fieldStartTime")}
                 </label>
@@ -539,12 +556,12 @@ export default function CreateElectionPage() {
                   type="datetime-local"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-[#F42A41]" />
                   {t("fieldEndTime")}
                 </label>
@@ -552,19 +569,19 @@ export default function CreateElectionPage() {
                   type="datetime-local"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5">
                 {t("fieldResultVisibility")}
               </label>
               <select
                 value={resultVisibility}
                 onChange={(e) => setResultVisibility(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
               >
                 <option value="LIVE">{t("visLive")}</option>
                 <option value="AFTER_CLOSE">{t("visAfterClose")}</option>
@@ -572,7 +589,7 @@ export default function CreateElectionPage() {
             </div>
 
             <div className="pt-2">
-              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+              <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
                 <Lock className="w-4 h-4 text-[#006A4E]" />
                 {t("adminPinLabel")}
               </label>
@@ -655,19 +672,32 @@ export default function CreateElectionPage() {
                 </span>
                 <span className="text-xs text-slate-500 block mt-0.5">
                   {locale === "bn"
-                    ? "রোল বা নামের তালিকা পেস্ট করুন; প্রতিটি ভোটারের জন্য একক ওয়ান-টাইম কোড তৈরি হবে।"
-                    : "Paste student roll list; unique one-time codes generated for maximum integrity."}
+                    ? "রোল বা নামের তালিকা পেস্ট বা CSV আপলোড করুন; প্রতিটি ভোটারের জন্য একক ওয়ান-টাইম কোড তৈরি হবে।"
+                    : "Paste student roll list or upload CSV; unique one-time codes generated for high security."}
                 </span>
               </div>
             </label>
           </div>
 
-          {/* Voter List Box */}
+          {/* Voter List Box & CSV Importer */}
           {voterAccessType === "CODE_LIST" && (
-            <div className="space-y-2 pt-2">
-              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
-                {locale === "bn" ? "ভোটার তালিকা (রোল নম্বর / নাম)" : "Voter Roster"}
-              </label>
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  {locale === "bn" ? "ভোটার তালিকা (রোল নম্বর / নাম)" : "Voter Roster"}
+                </label>
+                <label className="cursor-pointer inline-flex items-center gap-1 text-xs text-[#006A4E] font-semibold hover:underline">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{locale === "bn" ? "CSV ফাইল আপলোড" : "Upload CSV"}</span>
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={handleCsvUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
               <textarea
                 rows={5}
                 value={voterListRaw}
@@ -688,7 +718,7 @@ export default function CreateElectionPage() {
             </div>
           )}
 
-          {/* Final Summary Card */}
+          {/* Summary Card */}
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
             <div className="font-semibold text-slate-800 dark:text-slate-200">
               {t("summaryReview")}:
@@ -736,5 +766,20 @@ export default function CreateElectionPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CreateElectionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-md mx-auto px-4 py-24 text-center">
+          <div className="w-12 h-12 border-4 border-[#006A4E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-slate-500">Loading election wizard...</p>
+        </div>
+      }
+    >
+      <CreateElectionContent />
+    </Suspense>
   );
 }

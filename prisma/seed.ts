@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -8,7 +9,7 @@ function sha256(data: string): string {
 }
 
 function hashAdminPin(pin: string): string {
-  return sha256(`votebd-secure-admin-salt:${pin.trim()}`);
+  return bcrypt.hashSync(pin.trim(), 10);
 }
 
 async function main() {

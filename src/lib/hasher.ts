@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 
 /**
  * Computes a SHA-256 hash from a string.
@@ -31,47 +32,66 @@ export function calculateBallotHash(
  * Generates an anonymous, public receipt verification code (e.g. VBD-74AB-92EF)
  * from the ballot hash and sequence number.
  */
-export function generateReceiptCode(ballotHash: string, sequenceNumber: number): string {
-  const hex = ballotHash.substring(0, 8).toUpperCase();
-  const part1 = hex.substring(0, 4);
-  const part2 = hex.substring(4, 8);
-  return `VBD-${part1}-${part2}`;
+export function generateReceiptCode(ballotHash?: string, sequenceNumber?: number): string {
+  if (ballotHash) {
+    const hex = ballotHash.substring(0, 8).toUpperCase();
+    const part1 = hex.substring(0, 4);
+    const part2 = hex.substring(4, 8);
+    return `VBD-${part1}-${part2}`;
+  }
+  const randomBytes = crypto.randomBytes(4).toString("hex").toUpperCase();
+  return `VBD-${randomBytes.substring(0, 4)}-${randomBytes.substring(4, 8)}`;
 }
 
 /**
- * Generates a clean 6-character uppercase alphanumeric Join Code (e.g., "BD-842" or "VOTE99")
+ * Cryptographically secure 6-character Join Code (e.g. "CR-2024" or "BD8429")
+ * Uses crypto.randomInt to eliminate predictability.
  */
 export function generateJoinCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous chars I, O, 0, 1
   let code = "";
   for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(crypto.randomInt(0, chars.length));
   }
   return code;
 }
 
 /**
- * Generates single-use voter codes (e.g. VTR-8941)
+ * Generates single-use voter codes (e.g. V-XY8924) using CSPRNG.
  */
 export function generateVoterCode(prefix = "V"): string {
-  const num = Math.floor(1000 + Math.random() * 9000);
+  const num = crypto.randomInt(1000, 9999);
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const char1 = chars.charAt(Math.floor(Math.random() * chars.length));
-  const char2 = chars.charAt(Math.floor(Math.random() * chars.length));
+  const char1 = chars.charAt(crypto.randomInt(0, chars.length));
+  const char2 = chars.charAt(crypto.randomInt(0, chars.length));
   return `${prefix}-${char1}${char2}${num}`;
 }
 
 /**
- * Hashes an admin management PIN/passcode.
+ * Hashes an admin management PIN with bcrypt (Salt rounds = 10).
  */
-export function hashAdminPin(pin: string): string {
-  const salt = "votebd-secure-admin-salt";
-  return sha256(`${salt}:${pin.trim()}`);
+export async function hashAdminPin(pin: string): Promise<string> {
+  return bcrypt.hash(pin.trim(), 10);
 }
 
 /**
- * Verifies if entered PIN matches the stored hash.
+ * Synchronous hash version for seed script.
  */
-export function verifyAdminPin(enteredPin: string, storedHash: string): boolean {
-  return hashAdminPin(enteredPin) === storedHash;
+export function hashAdminPinSync(pin: string): string {
+  return bcrypt.hashSync(pin.trim(), 10);
+}
+
+/**
+ * Verifies if entered PIN matches the stored hash (supports bcrypt and legacy SHA-256).
+ */
+export async function verifyAdminPin(enteredPin: string, storedHash: string): Promise<boolean> {
+  const trimmed = enteredPin.trim();
+  // Check if bcrypt hash
+  if (storedHash.startsWith("$2a$") || storedHash.startsWith("$2b$") || storedHash.startsWith("$2y$")) {
+    return bcrypt.compare(trimmed, storedHash);
+  }
+  // Fallback to legacy SHA-256 for backwards compatibility with previous seeds
+  const legacySalt = "votebd-secure-admin-salt";
+  const legacyHash = sha256(`${legacySalt}:${trimmed}`);
+  return legacyHash === storedHash;
 }

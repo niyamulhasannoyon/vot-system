@@ -3,6 +3,7 @@ import { Inter, Noto_Sans_Bengali } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { LanguageProvider } from "@/i18n/LanguageContext";
+import { ToastProvider } from "@/components/ui/Toast";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 
@@ -54,11 +55,13 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col font-sans selection:bg-[#006A4E] selection:text-white">
         <LanguageProvider>
-          <Suspense fallback={<div className="h-16 w-full border-b border-slate-200 bg-white" />}>
-            <Header />
-          </Suspense>
-          <main className="flex-1 flex flex-col">{children}</main>
-          <Footer />
+          <ToastProvider>
+            <Suspense fallback={<div className="h-16 w-full border-b border-slate-200 bg-white" />}>
+              <Header />
+            </Suspense>
+            <main className="flex-1 flex flex-col">{children}</main>
+            <Footer />
+          </ToastProvider>
         </LanguageProvider>
       </body>
     </html>

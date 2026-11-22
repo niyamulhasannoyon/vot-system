@@ -3,7 +3,7 @@
 > **A clean, professional, mobile-first voting platform designed for Bangladesh.**  
 > Built for class representatives (CR), student dorms, clubs, mosques, housing societies, samity committees, and quick organizational polls.
 
-[![Tests](https://img.shields.io/badge/tests-7%20passed-brightgreen)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-19%20passed-brightgreen)](#testing--verification)
 [![i18n](https://img.shields.io/badge/language-Bangla%20%7C%20English-006A4E)](#localization--bangladesh-context)
 [![Integrity](https://img.shields.io/badge/ballot-100%25%20secret-F42A41)](#security--cryptographic-integrity)
 
@@ -87,24 +87,56 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 🧪 Testing & Verification
 
-Run the automated test suite verifying secret ballot integrity, atomic one-vote locking, hash-chain mathematics, and results accuracy:
+Run the automated test suite verifying secret ballot integrity, atomic one-vote locking, hash-chain mathematics, rate limiting, bcrypt PIN hashing, and Zod input validation:
 ```bash
 pnpm test
 ```
 
 Expected output:
 ```text
-🧪 Running VoteBD Core Security & Integrity Tests...
+==========================================================
+🧪 VoteBD Commercial-Grade Security & Integrity Test Suite
+==========================================================
+
   ✓ [PASS] Demo election CR-2024 exists in database
-  ✓ [PASS] Ballot table has zero foreign key or reference to Voter identity (Secret Ballot)
-  ✓ [PASS] Found used voter (CR-V101)
-  ✓ [PASS] Second voting attempt with used code is strictly blocked
+
+[Test 1] Secret Ballot Architectural Independence
+  ✓ [PASS] Ballot table schema has zero foreign key or reference to Voter identity
+
+[Test 2] One-Voter-One-Vote Atomic Enforcement
+  ✓ [PASS] Identified used voter record (CR-V101)
+  ✓ [PASS] Second voting attempt with used voter code is strictly prevented
+
+[Test 3] Tamper-Evident SHA-256 Hash-Chain Integrity
   ✓ [PASS] All ballots mathematically verified in cryptographic chain
-  ✓ [PASS] Voted status count matches total ballots cast
-  ✓ [PASS] Turnout calculated accurately
-================================
-Tests Completed: 7 Passed, 0 Failed
-================================
+
+[Test 4] Turnout & Tally Calculation Precision
+  ✓ [PASS] Voter marked-voted count matches ballots cast in box
+  ✓ [PASS] Turnout percentage calculated accurately
+
+[Test 5] Bcrypt PIN Hashing & Verification
+  ✓ [PASS] Bcrypt correctly authenticates the correct admin PIN
+  ✓ [PASS] Bcrypt strictly rejects an incorrect admin PIN
+
+[Test 6] Sliding-Window Rate Limiter Enforcement
+  ✓ [PASS] Rate limiter permits requests within quota (3/3)
+  ✓ [PASS] Rate limiter strictly blocks requests exceeding limit
+
+[Test 7] Zod Schema Validation Guardrails
+  ✓ [PASS] Accepts standard receipt code format VBD-XXXX-XXXX
+  ✓ [PASS] Rejects malformed receipt code
+  ✓ [PASS] Accepts valid vote payload with choice selection
+  ✓ [PASS] Rejects empty vote payload without candidate selection
+
+[Test 8] Cryptographically Secure Random Generators
+  ✓ [PASS] Receipt format matches VBD-XXXX-XXXX
+  ✓ [PASS] Sequential receipts are unique and non-colliding
+  ✓ [PASS] Join code generated with expected length 6
+  ✓ [PASS] Voter code uses expected prefix
+
+==========================================================
+Test Execution Finished: 19 Passed, 0 Failed
+==========================================================
 ```
 
 ---
