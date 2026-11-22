@@ -1,0 +1,100 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Election {
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  title            String
+  titleBn          String?
+  description      String?
+  descriptionBn    String?
+  category         String       @default("class") // class, club, community, poll, general
+  electionType     String       @default("SINGLE") // SINGLE, MULTIPLE, RANKED, YES_NO
+  status           String       @default("ACTIVE") // DRAFT, ACTIVE, PAUSED, CLOSED
+  joinCode         String       @unique // 6-character clean uppercase alphanumeric code
+  adminKey         String       // SHA-256 hash or secret admin passcode
+  allowNota        Boolean      @default(false) // None of the above
+  maxChoices       Int          @default(1)
+  resultVisibility String       @default("LIVE") // LIVE, AFTER_CLOSE
+  voterAccessType  String       @default("JOIN_CODE") // JOIN_CODE, CODE_LIST, OPEN_POLL
+  startTime        DateTime     @default(now())
+  endTime          DateTime
+  timezone         String       @default("Asia/Dhaka")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  options          Option[]
+  voters           Voter[]
+  ballots          Ballot[]
+  auditLogs        AuditLog[]
+
+  @@index([joinCode])
+  @@index([status])
+}
+
+model Option {
+  id           String    @id @default(cuid())
+  electionId   String
+  election     Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  name         String
+  nameBn       String?
+  symbolEmoji  String?   // e.g. ⚽, 📚, 🕊️, 🇧🇩
+  symbolName   String?
+  bio          String?
+  bioBn        String?
+  photoUrl     String?
+  orderIndex   Int       @default(0)
+
+  @@index([electionId])
+}
+
+model Voter {
+  id                 String    @id @default(cuid())
+  electionId         String
+  election           Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  voterCode          String    // Single-use code (e.g. V-7824)
+  identifier         String?   // Student Roll / Phone / Name / Nickname
+  hasVoted           Boolean   @default(false)
+  votedAt            DateTime?
+  deviceFingerprint  String?   // For open polls to prevent spam
+
+  @@unique([electionId, voterCode])
+  @@index([electionId, voterCode])
+}
+
+// CRITICAL SECURITY FEATURE: Secret Ballot.
+// There is ABSOLUTELY NO foreign key or relation to `Voter`!
+// A voter is marked hasVoted = true in the Voter table,
+// while the ballot is appended anonymously into this table with cryptographic hash-chaining.
+model Ballot {
+  id              String    @id @default(cuid())
+  electionId      String
+  election        Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  receiptCode     String    @unique // Public voter receipt: e.g. "VBD-4892-BC3F"
+  choiceData      String    // JSON string containing selected optionId(s) or ranked array
+  sequenceNumber  Int       // 1, 2, 3...
+  prevHash        String    // Hash of previous ballot or genesis block
+  ballotHash      String    // Cryptographic SHA-256 seal
+  castAt          DateTime  @default(now())
+
+  @@unique([electionId, sequenceNumber])
+  @@index([electionId])
+  @@index([receiptCode])
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  electionId  String
+  election    Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  eventType   String    // ELECTION_CREATED, ELECTION_STARTED, BALLOT_CAST, DEADLINE_EXTENDED, ELECTION_CLOSED
+  details     String?   // JSON summary of event
+  timestamp   DateTime  @default(now())
+
+  @@index([electionId])
+}

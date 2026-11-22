@@ -1,0 +1,16 @@
+{
+  "name": "VoteBD - ভোটবিডি",
+  "short_name": "VoteBD",
+  "description": "বাংলাদেশের জন্য আধুনিক, নিরাপদ ও সহজ ভোটিং প্ল্যাটফর্ম",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#006A4E",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
