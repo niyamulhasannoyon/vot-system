@@ -24,16 +24,16 @@ export default function JoinElectionPage() {
   };
 
   return (
-    <div className="max-w-md mx-auto px-4 py-16 sm:py-24 w-full">
-      <Card className="p-6 sm:p-8 space-y-6 shadow-md border-slate-200/90 dark:border-slate-800">
+    <div className="max-w-md mx-auto px-4 py-12 sm:py-20 w-full flex-1 flex flex-col justify-center">
+      <Card className="p-6 sm:p-8 space-y-6 shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-[#EBF7F2] text-[#006A4E] flex items-center justify-center mx-auto shadow-sm">
-            <Vote className="w-7 h-7" />
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-[#006A4E] dark:text-[#34D399] flex items-center justify-center mx-auto border border-emerald-100 dark:border-emerald-900/50">
+            <Vote className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
             {t("voterHeading")}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {locale === "bn"
               ? "আয়োজক থেকে প্রাপ্ত ৬ অক্ষরের জয়েন কোড লিখুন"
               : "Enter the 6-character election join code from your organizer"}
@@ -54,39 +54,38 @@ export default function JoinElectionPage() {
                   setCode(e.target.value);
                   setError(null);
                 }}
-                placeholder="যেমন: CR-2024"
-                className="w-full px-4 py-3 text-center text-xl font-mono uppercase tracking-widest rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                placeholder={locale === "bn" ? "যেমন: CR-2024" : "e.g. CR-2024"}
+                className="w-full h-12 px-4 text-center text-xl font-mono uppercase tracking-widest rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
               />
             </div>
             {error && (
-              <p className="text-xs text-red-500 mt-1.5 text-center font-medium">
+              <p className="text-xs text-red-500 mt-2 text-center font-medium">
                 {error}
               </p>
             )}
           </div>
 
-          <Button type="submit" size="lg" className="w-full gap-2">
+          <Button type="submit" size="md" className="w-full h-11 gap-2 font-medium">
             <span>{t("joinBoxButton")}</span>
             <ArrowRight className="w-4 h-4" />
           </Button>
         </form>
 
         {/* Demo Fast Access Link */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
-          <span className="text-xs text-slate-500 block mb-2">
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center space-y-1.5">
+          <span className="text-xs text-slate-500 dark:text-slate-400 block">
             {locale === "bn" ? "টেস্ট করতে চান?" : "Want to test instantly?"}
           </span>
           <Link
             href="/vote/CR-2024"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#006A4E] hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#006A4E] dark:text-[#34D399] hover:underline"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            {t("heroTryDemo")}
+            <span>{t("heroTryDemo")}</span>
           </Link>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#006A4E]" />
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#006A4E] dark:text-[#34D399]" />
           <span>{locale === "bn" ? "১০০% গোপন ও সুরক্ষিত ব্যালট" : "100% Secret & Tamper-Proof"}</span>
         </div>
       </Card>

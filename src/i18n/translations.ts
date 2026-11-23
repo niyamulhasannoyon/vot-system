@@ -21,8 +21,12 @@ export const translations = {
     textSizeLarge: "বড় লেখা",
     highContrastOn: "হাই-কনট্রাস্ট অন",
     highContrastOff: "হাই-কনট্রাস্ট অফ",
-    numeralBangla: "বাংলা সংখ্যা (১২৩)",
-    numeralEnglish: "ইংরেজি সংখ্যা (123)",
+    numeralBangla: "বাংলা সংখ্যা (১২৩৪)",
+    numeralEnglish: "ইংরেজি সংখ্যা (1234)",
+    themeTitle: "থিম নির্বাচন",
+    themeLight: "লাইট",
+    themeDark: "ডার্ক",
+    themeSystem: "সিস্টেম",
     langToggle: "English",
 
     // Landing Page Hero
@@ -277,8 +281,12 @@ export const translations = {
     textSizeLarge: "Large text",
     highContrastOn: "High-contrast ON",
     highContrastOff: "High-contrast OFF",
-    numeralBangla: "Bangla Numerals (১২৩)",
-    numeralEnglish: "English Numerals (123)",
+    numeralBangla: "Bangla Numerals (১২৩৪)",
+    numeralEnglish: "English Numerals (1234)",
+    themeTitle: "Appearance",
+    themeLight: "Light",
+    themeDark: "Dark",
+    themeSystem: "System",
     langToggle: "বাংলা",
 
     // Landing Page Hero

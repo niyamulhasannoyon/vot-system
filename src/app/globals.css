@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --primary: #006A4E;
@@ -20,8 +22,8 @@
   }
 
   .dark {
-    --primary: #059669;
-    --primary-hover: #10B981;
+    --primary: #10B981;
+    --primary-hover: #059669;
     --primary-light: #064E3B;
     --primary-dark: #022C22;
 
@@ -29,26 +31,28 @@
     --accent-hover: #FB7185;
     --accent-light: #4C0519;
 
-    --bg-page: #090E17;
-    --bg-card: #111A29;
+    --bg-page: #0B1120;
+    --bg-card: #111C33;
     --text-main: #F8FAFC;
     --text-muted: #94A3B8;
-    --border: #1E2C42;
+    --border: #1E2E4A;
     --ring: rgba(16, 185, 129, 0.3);
   }
 
   /* High contrast mode for accessibility */
+  html.high-contrast,
   .high-contrast {
-    --primary: #000000;
-    --primary-hover: #1A1A1A;
-    --primary-light: #EEEEEE;
-    --accent: #C40000;
-    --bg-page: #FFFFFF;
-    --bg-card: #FFFFFF;
-    --text-main: #000000;
-    --text-muted: #222222;
     --border: #000000;
   }
+
+  html.dark.high-contrast,
+  .dark.high-contrast {
+    --border: #FFFFFF;
+  }
+}
+
+html {
+  transition: font-size 0.15s ease;
 }
 
 body {
@@ -57,6 +61,7 @@ body {
   font-family: var(--font-bengali), var(--font-inter), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
 }
 
 /* Custom focus ring for WCAG 2.1 AA keyboard navigation */

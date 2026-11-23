@@ -352,12 +352,12 @@ function CreateElectionContent() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 sm:py-12">
-      <div className="mb-6 text-center sm:text-left">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+    <div className="max-w-3xl mx-auto px-4 py-8 sm:py-12 w-full flex-1">
+      <div className="mb-6 text-center sm:text-left space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
           {t("wizardTitle")}
         </h1>
-        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+        <p className="text-slate-600 dark:text-slate-400 text-sm">
           {locale === "bn"
             ? "সহজ ৪টি ধাপে সম্পন্ন করুন আপনার ক্লাস বা প্রতিষ্ঠানের নির্বাচন।"
             : "Complete your institutional voting setup in 4 simple steps."}
@@ -375,12 +375,12 @@ function CreateElectionContent() {
 
       {/* STEP 1: BASICS */}
       {step === 1 && (
-        <Card className="space-y-6">
+        <Card className="space-y-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t("wizardStep1")}
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {locale === "bn"
                 ? "নির্বাচনের নাম ও সাধারণ তথ্য লিখুন।"
                 : "Basic title and category configuration."}
@@ -406,7 +406,7 @@ function CreateElectionContent() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("fieldDescPlaceholder")}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
               />
             </div>
 
@@ -418,7 +418,7 @@ function CreateElectionContent() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
                 >
                   <option value="class">{t("catClass")}</option>
                   <option value="club">{t("catClub")}</option>
@@ -434,7 +434,7 @@ function CreateElectionContent() {
                 <select
                   value={electionType}
                   onChange={(e) => setElectionType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
                 >
                   <option value="SINGLE">{t("typeSingle")}</option>
                   <option value="MULTIPLE">{t("typeMultiple")}</option>
@@ -448,13 +448,13 @@ function CreateElectionContent() {
 
       {/* STEP 2: CANDIDATES */}
       {step === 2 && (
-        <Card className="space-y-6">
+        <Card className="space-y-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t("candidatesTitle")}
               </h3>
-              <p className="text-xs text-slate-500">{t("candidatesSubtitle")}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t("candidatesSubtitle")}</p>
             </div>
             <Button size="sm" variant="secondary" onClick={addCandidate}>
               {t("btnAddCandidate")}
@@ -465,9 +465,9 @@ function CreateElectionContent() {
             {candidates.map((cand, idx) => (
               <div
                 key={cand.id}
-                className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col sm:flex-row items-center gap-3"
+                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col sm:flex-row items-center gap-3"
               >
-                <div className="w-14 shrink-0">
+                <div className="w-12 shrink-0">
                   <input
                     type="text"
                     value={cand.symbolEmoji}
@@ -476,7 +476,7 @@ function CreateElectionContent() {
                     }
                     placeholder="⚽"
                     title="Symbol or Emoji"
-                    className="w-12 h-12 text-center text-2xl rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-[#006A4E]"
+                    className="w-11 h-11 text-center text-xl rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:outline-none focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20"
                   />
                 </div>
 
@@ -488,7 +488,7 @@ function CreateElectionContent() {
                       updateCandidate(cand.id, "name", e.target.value)
                     }
                     placeholder={`${t("candidateNamePlaceholder")} ${formatNum(idx + 1)}`}
-                    className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#006A4E]"
+                    className="h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20"
                   />
                   <input
                     type="text"
@@ -497,7 +497,7 @@ function CreateElectionContent() {
                       updateCandidate(cand.id, "bio", e.target.value)
                     }
                     placeholder={t("candidateBioPlaceholder")}
-                    className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#006A4E]"
+                    className="h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20"
                   />
                 </div>
 
@@ -514,19 +514,19 @@ function CreateElectionContent() {
           </div>
 
           {/* NOTA Toggle */}
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={allowNota}
                 onChange={(e) => setAllowNota(e.target.checked)}
-                className="w-4 h-4 mt-1 rounded text-[#006A4E] focus:ring-[#006A4E]"
+                className="w-4 h-4 mt-0.5 rounded text-[#006A4E] focus:ring-[#006A4E]"
               />
               <div>
                 <span className="text-sm font-semibold text-slate-900 dark:text-white block">
                   {t("allowNotaToggle")}
                 </span>
-                <span className="text-xs text-slate-500 block">
+                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
                   {t("allowNotaDesc")}
                 </span>
               </div>
@@ -537,26 +537,26 @@ function CreateElectionContent() {
 
       {/* STEP 3: RULES & SCHEDULE */}
       {step === 3 && (
-        <Card className="space-y-6">
+        <Card className="space-y-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t("rulesTitle")}
             </h3>
-            <p className="text-xs text-slate-500">{t("rulesSubtitle")}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("rulesSubtitle")}</p>
           </div>
 
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-[#006A4E]" />
+                  <Calendar className="w-4 h-4 text-[#006A4E] dark:text-[#34D399]" />
                   {t("fieldStartTime")}
                 </label>
                 <input
                   type="datetime-local"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -569,7 +569,7 @@ function CreateElectionContent() {
                   type="datetime-local"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -581,7 +581,7 @@ function CreateElectionContent() {
               <select
                 value={resultVisibility}
                 onChange={(e) => setResultVisibility(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
               >
                 <option value="LIVE">{t("visLive")}</option>
                 <option value="AFTER_CLOSE">{t("visAfterClose")}</option>
@@ -590,7 +590,7 @@ function CreateElectionContent() {
 
             <div className="pt-2">
               <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-[#006A4E]" />
+                <Lock className="w-4 h-4 text-[#006A4E] dark:text-[#34D399]" />
                 {t("adminPinLabel")}
               </label>
               <input
@@ -599,9 +599,9 @@ function CreateElectionContent() {
                 value={adminPin}
                 onChange={(e) => setAdminPin(e.target.value)}
                 placeholder={t("adminPinPlaceholder")}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none font-mono"
+                className="w-full h-11 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none font-mono"
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {t("adminPinHelper")}
               </p>
             </div>
@@ -611,12 +611,12 @@ function CreateElectionContent() {
 
       {/* STEP 4: VOTER ACCESS & PUBLISH */}
       {step === 4 && (
-        <Card className="space-y-6">
+        <Card className="space-y-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t("accessTitle")}
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {locale === "bn"
                 ? "ভোটাররা কীভাবে নির্বাচনে অংশ নেবেন তা নির্ধারণ করুন।"
                 : "Choose how eligible voters enter and authenticate."}
@@ -627,8 +627,8 @@ function CreateElectionContent() {
             <label
               className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer transition-colors ${
                 voterAccessType === "JOIN_CODE"
-                  ? "border-[#006A4E] bg-[#EBF7F2] dark:bg-[#064E3B]/20"
-                  : "border-slate-200 dark:border-slate-700"
+                  ? "border-[#006A4E] bg-emerald-50/60 dark:bg-emerald-950/30"
+                  : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50"
               }`}
             >
               <input
@@ -643,7 +643,7 @@ function CreateElectionContent() {
                 <span className="text-sm font-semibold text-slate-900 dark:text-white block">
                   {t("accessTypeJoinCode")}
                 </span>
-                <span className="text-xs text-slate-500 block mt-0.5">
+                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
                   {locale === "bn"
                     ? "সবাই একটি সাধারণ কোড লিখবে। ডিভাইস আইডি দ্বারা একবার ভোট নিশ্চিত করা হয়।"
                     : "Everyone enters a 6-character code. Simple for classes and quick polls."}
@@ -654,8 +654,8 @@ function CreateElectionContent() {
             <label
               className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer transition-colors ${
                 voterAccessType === "CODE_LIST"
-                  ? "border-[#006A4E] bg-[#EBF7F2] dark:bg-[#064E3B]/20"
-                  : "border-slate-200 dark:border-slate-700"
+                  ? "border-[#006A4E] bg-emerald-50/60 dark:bg-emerald-950/30"
+                  : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50"
               }`}
             >
               <input
@@ -670,7 +670,7 @@ function CreateElectionContent() {
                 <span className="text-sm font-semibold text-slate-900 dark:text-white block">
                   {t("accessTypeCodeList")}
                 </span>
-                <span className="text-xs text-slate-500 block mt-0.5">
+                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
                   {locale === "bn"
                     ? "রোল বা নামের তালিকা পেস্ট বা CSV আপলোড করুন; প্রতিটি ভোটারের জন্য একক ওয়ান-টাইম কোড তৈরি হবে।"
                     : "Paste student roll list or upload CSV; unique one-time codes generated for high security."}
@@ -686,7 +686,7 @@ function CreateElectionContent() {
                 <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
                   {locale === "bn" ? "ভোটার তালিকা (রোল নম্বর / নাম)" : "Voter Roster"}
                 </label>
-                <label className="cursor-pointer inline-flex items-center gap-1 text-xs text-[#006A4E] font-semibold hover:underline">
+                <label className="cursor-pointer inline-flex items-center gap-1 text-xs text-[#006A4E] dark:text-[#34D399] font-semibold hover:underline">
                   <Upload className="w-3.5 h-3.5" />
                   <span>{locale === "bn" ? "CSV ফাইল আপলোড" : "Upload CSV"}</span>
                   <input
@@ -703,11 +703,11 @@ function CreateElectionContent() {
                 value={voterListRaw}
                 onChange={(e) => setVoterListRaw(e.target.value)}
                 placeholder={t("accessVoterListPlaceholder")}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono focus:ring-2 focus:ring-[#006A4E] focus:outline-none"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-mono focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none"
               />
-              <div className="text-xs text-slate-500 flex items-center justify-between">
+              <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
                 <span>{t("accessCodeCountLabel")}</span>
-                <span className="font-bold text-[#006A4E]">
+                <span className="font-bold text-[#006A4E] dark:text-[#34D399]">
                   {formatNum(
                     voterListRaw
                       .split("\n")
@@ -719,14 +719,14 @@ function CreateElectionContent() {
           )}
 
           {/* Summary Card */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs space-y-1.5">
             <div className="font-semibold text-slate-800 dark:text-slate-200">
               {t("summaryReview")}:
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
               <span>{t("fieldTitle")}:</span>
               <span className="font-medium text-slate-900 dark:text-white">
-                {title}
+                {title || "—"}
               </span>
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
@@ -742,7 +742,7 @@ function CreateElectionContent() {
       {/* Stepper Navigation Buttons */}
       <div className="flex items-center justify-between mt-8 pt-4 border-t border-slate-200 dark:border-slate-800">
         {step > 1 ? (
-          <Button variant="secondary" onClick={() => setStep(step - 1)}>
+          <Button variant="secondary" size="md" onClick={() => setStep(step - 1)} className="h-11 px-5">
             <ArrowLeft className="w-4 h-4 mr-1.5" />
             {t("btnBack")}
           </Button>
@@ -751,15 +751,16 @@ function CreateElectionContent() {
         )}
 
         {step < 4 ? (
-          <Button onClick={handleNext}>
+          <Button size="md" onClick={handleNext} className="h-11 px-5">
             {t("btnNext")}
             <ArrowRight className="w-4 h-4 ml-1.5" />
           </Button>
         ) : (
           <Button
+            size="md"
             onClick={handlePublish}
             isLoading={isSubmitting}
-            className="bg-[#006A4E] hover:bg-[#00533C] text-white px-8"
+            className="h-11 px-8 bg-[#006A4E] hover:bg-[#00533C] text-white"
           >
             {isSubmitting ? t("btnSaving") : t("btnPublish")}
           </Button>

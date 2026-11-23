@@ -77,22 +77,22 @@ function VerifyContent() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-12 sm:py-20 w-full space-y-8 animate-fade-in">
+    <div className="max-w-2xl mx-auto px-4 py-10 sm:py-16 w-full space-y-6 animate-fade-in flex-1">
       {/* Header */}
       <div className="text-center space-y-2">
-        <div className="w-14 h-14 rounded-2xl bg-[#EBF7F2] text-[#006A4E] dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center mx-auto shadow-sm">
-          <ShieldCheck className="w-8 h-8" />
+        <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-[#006A4E] dark:text-[#34D399] flex items-center justify-center mx-auto border border-emerald-100 dark:border-emerald-900/50">
+          <ShieldCheck className="w-6 h-6" />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
           {t("verifyHeading")}
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
           {t("verifySubtitle")}
         </p>
       </div>
 
       {/* Input Box */}
-      <Card className="p-6 sm:p-8 space-y-5 border-slate-200 dark:border-slate-800 shadow-sm">
+      <Card className="p-6 sm:p-8 space-y-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
@@ -108,7 +108,7 @@ function VerifyContent() {
                   setError(null);
                 }}
                 placeholder={t("verifyInputPlaceholder")}
-                className="w-full px-4 py-3.5 text-center text-lg sm:text-xl font-mono uppercase tracking-widest rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none transition-all"
+                className="w-full h-12 px-4 text-center text-lg sm:text-xl font-mono uppercase tracking-widest rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#006A4E] focus:ring-2 focus:ring-[#006A4E]/20 focus:outline-none transition-colors"
               />
             </div>
           </div>
@@ -116,8 +116,8 @@ function VerifyContent() {
           <Button
             type="submit"
             isLoading={loading}
-            size="lg"
-            className="w-full gap-2"
+            size="md"
+            className="w-full h-11 gap-2 font-medium"
           >
             <Search className="w-4 h-4" />
             <span>{t("btnCheckReceipt")}</span>
@@ -126,7 +126,7 @@ function VerifyContent() {
 
         {/* Demo Fast Access Sample */}
         <div className="pt-2 text-center">
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
             {locale === "bn" ? "ডেমো রসিদ কোড টেস্ট করুন:" : "Sample demo receipt:"}{" "}
             <button
               type="button"
@@ -134,7 +134,7 @@ function VerifyContent() {
                 setReceiptInput("VBD-E7A1-420B");
                 verifyCode("VBD-E7A1-420B");
               }}
-              className="font-mono text-[#006A4E] dark:text-[#34D399] underline font-semibold ml-1 hover:text-emerald-700"
+              className="font-mono text-[#006A4E] dark:text-[#34D399] underline font-semibold ml-1 hover:text-emerald-700 dark:hover:text-emerald-400"
             >
               VBD-E7A1-420B
             </button>

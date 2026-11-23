@@ -49,14 +49,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${notoSansBengali.variable} h-full`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${notoSansBengali.variable} h-full`}>
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
-      <body className="min-h-full flex flex-col font-sans selection:bg-[#006A4E] selection:text-white">
+      <body className="min-h-full flex flex-col font-sans bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-[#006A4E] selection:text-white transition-colors duration-150">
         <LanguageProvider>
           <ToastProvider>
-            <Suspense fallback={<div className="h-16 w-full border-b border-slate-200 bg-white" />}>
+            <Suspense fallback={<div className="h-16 w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" />}>
               <Header />
             </Suspense>
             <main className="flex-1 flex flex-col">{children}</main>
