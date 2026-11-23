@@ -9,10 +9,10 @@ import { formatBST } from "@/lib/date";
 export function Footer() {
   const { locale, useBengaliNumerals, t } = useLanguage();
   const [bstTime, setBstTime] = useState<string>("");
-  const [currentYear, setCurrentYear] = useState<number>(2024);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setCurrentYear(new Date().getFullYear());
+    setMounted(true);
     const updateTime = () => {
       setBstTime(
         formatBST(new Date(), {
@@ -101,8 +101,11 @@ export function Footer() {
                 <Clock className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{t("footerDhakaTime")}</span>
               </div>
-              <div className="text-sm font-semibold text-white font-mono">
-                {bstTime || "ঢাকা, বাংলাদেশ"}
+              <div
+                className="text-sm font-semibold text-white font-mono"
+                suppressHydrationWarning
+              >
+                {mounted && bstTime ? bstTime : "ঢাকা, বাংলাদেশ"}
               </div>
             </div>
 
@@ -115,9 +118,12 @@ export function Footer() {
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <div>
-            © {currentYear} VoteBD.{" "}
+        <div
+          className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4"
+          suppressHydrationWarning
+        >
+          <div suppressHydrationWarning>
+            © {mounted ? new Date().getFullYear() : 2026} VoteBD.{" "}
             {locale === "bn"
               ? "সর্বস্বত্ব সংরক্ষিত। বাংলাদেশের শিক্ষার্থী ও সংগঠনের জন্য নিবেদিত।"
               : "All rights reserved. Dedicated to communities & students of Bangladesh."}

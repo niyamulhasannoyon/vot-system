@@ -53,7 +53,7 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
-      <body className="min-h-full flex flex-col font-sans bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-[#006A4E] selection:text-white transition-colors duration-150">
+      <body suppressHydrationWarning className="min-h-full flex flex-col font-sans bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-[#006A4E] selection:text-white transition-colors duration-150">
         <LanguageProvider>
           <ToastProvider>
             <Suspense fallback={<div className="h-16 w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" />}>
