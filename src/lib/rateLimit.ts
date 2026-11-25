@@ -9,9 +9,9 @@ interface RateLimitRecord {
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
 
-// Clean up expired entries every 5 minutes
+// Clean up expired entries every 5 minutes without keeping Node.js event loop alive
 if (typeof setInterval !== "undefined") {
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const now = Date.now();
     for (const [key, record] of rateLimitStore.entries()) {
       if (now > record.resetAt) {
@@ -19,6 +19,18 @@ if (typeof setInterval !== "undefined") {
       }
     }
   }, 5 * 60 * 1000);
+  cleanupTimer.unref?.();
+}
+
+export function getClientIp(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get("x-real-ip")?.trim();
+  if (realIp) return realIp;
+  return "unknown-ip";
 }
 
 export function checkRateLimit(
@@ -56,4 +68,8 @@ export function checkRateLimit(
     remaining: limit - record.count,
     retryAfterSeconds: 0,
   };
+}
+
+export function resetRateLimit(key: string): void {
+  rateLimitStore.delete(key);
 }

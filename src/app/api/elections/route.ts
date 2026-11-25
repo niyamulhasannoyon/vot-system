@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateJoinCode, generateVoterCode, hashAdminPin } from "@/lib/hasher";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { createElectionSchema } from "@/lib/validations";
 
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.json();
-    const parseResult = createElectionSchema.safeParse(rawBody);
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`create_election:${ip}`, 10, 10 * 60 * 1000);
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        {
+          error: `Too many elections created recently. Please wait ${rateCheck.retryAfterSeconds} seconds.`,
+        },
+        { status: 429 }
+      );
+    }
 
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON request body." }, { status: 400 });
+    }
+
+    const parseResult = createElectionSchema.safeParse(rawBody);
     if (!parseResult.success) {
       const firstError = parseResult.error.issues[0]?.message || "Invalid input";
       return NextResponse.json({ error: firstError }, { status: 400 });
@@ -31,6 +48,50 @@ export async function POST(req: NextRequest) {
       voterListRaw,
     } = parseResult.data;
 
+    const start = startTime ? new Date(startTime) : new Date();
+    const end = new Date(endTime);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid start or end timestamp." },
+        { status: 400 }
+      );
+    }
+
+    if (end <= start) {
+      return NextResponse.json(
+        { error: "End time must be after start time." },
+        { status: 400 }
+      );
+    }
+
+    if (end <= new Date()) {
+      return NextResponse.json(
+        { error: "End time must be in the future." },
+        { status: 400 }
+      );
+    }
+
+    const voterLines =
+      voterAccessType === "CODE_LIST"
+        ? (voterListRaw || "")
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : [];
+
+    if (voterAccessType === "CODE_LIST" && voterLines.length === 0) {
+      return NextResponse.json(
+        { error: "Please provide at least 1 voter in the roster for Code List elections." },
+        { status: 400 }
+      );
+    }
+
+    const normalizedMaxChoices =
+      electionType === "MULTIPLE"
+        ? Math.min(Math.max(1, Number(maxChoices) || 2), candidates.length)
+        : 1;
+
     // Generate unique Join Code
     let joinCode = generateJoinCode();
     let isUnique = false;
@@ -40,117 +101,97 @@ export async function POST(req: NextRequest) {
       else joinCode = generateJoinCode();
     }
 
-    // Slug
-    const slugBase = title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "election";
+    const slugBase =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "election";
     const slug = `${slugBase}-${joinCode.toLowerCase()}`;
 
-    const start = startTime ? new Date(startTime) : new Date();
-    const end = new Date(endTime);
-
-    if (end <= start) {
-      return NextResponse.json(
-        { error: "End time must be after start time." },
-        { status: 400 }
-      );
-    }
-
-    // Hash admin PIN securely with bcrypt
     const hashedPin = await hashAdminPin(adminPin);
 
-    const election = await prisma.election.create({
-      data: {
-        slug,
-        title,
-        titleBn: titleBn || title,
-        description,
-        descriptionBn: descriptionBn || description,
-        category,
-        electionType,
-        status: "ACTIVE",
-        joinCode,
-        adminKey: hashedPin,
-        allowNota: Boolean(allowNota),
-        maxChoices: Number(maxChoices) || 1,
-        resultVisibility,
-        voterAccessType,
-        startTime: start,
-        endTime: end,
-        timezone: "Asia/Dhaka",
-        options: {
-          create: candidates.map((c, index: number) => ({
-            name: c.name,
-            nameBn: c.nameBn || c.name,
-            symbolEmoji: c.symbolEmoji || "🗳️",
-            symbolName: c.symbolName || "",
-            bio: c.bio || "",
-            bioBn: c.bioBn || c.bio || "",
-            orderIndex: index + 1,
-          })),
-        },
-      },
-      include: {
-        options: true,
-      },
-    });
-
-    // Parse voter list if provided
-    let generatedVotersCount = 0;
-    if (voterAccessType === "CODE_LIST" && voterListRaw?.trim()) {
-      const lines = voterListRaw
-        .split("\n")
-        .map((l: string) => l.trim())
-        .filter(Boolean);
-
-      const votersToCreate = lines.map((line: string, i: number) => ({
-        electionId: election.id,
-        voterCode: generateVoterCode(`V${i + 1}`),
-        identifier: line,
-        hasVoted: false,
-      }));
-
-      await prisma.voter.createMany({ data: votersToCreate });
-      generatedVotersCount = votersToCreate.length;
-    } else {
-      // Default set of sample codes for instant testability
-      const sampleCodes = Array.from({ length: 5 }, (_, i) => ({
-        electionId: election.id,
-        voterCode: generateVoterCode(`V${i + 1}`),
-        identifier: `General Voter ${i + 1}`,
-        hasVoted: false,
-      }));
-      await prisma.voter.createMany({ data: sampleCodes });
-      generatedVotersCount = sampleCodes.length;
-    }
-
-    // Log Creation in Audit
-    await prisma.auditLog.create({
-      data: {
-        electionId: election.id,
-        eventType: "ELECTION_CREATED",
-        details: JSON.stringify({
+    const created = await prisma.$transaction(async (tx) => {
+      const election = await tx.election.create({
+        data: {
+          slug,
           title,
-          candidatesCount: candidates.length,
-          votersCount: generatedVotersCount,
+          titleBn: titleBn || title,
+          description: description || null,
+          descriptionBn: descriptionBn || description || null,
+          category,
+          electionType,
+          status: "ACTIVE",
+          joinCode,
+          adminKey: hashedPin,
+          allowNota: Boolean(allowNota),
+          maxChoices: normalizedMaxChoices,
+          resultVisibility,
           voterAccessType,
-        }),
-      },
+          startTime: start,
+          endTime: end,
+          timezone: "Asia/Dhaka",
+          options: {
+            create: candidates.map((c, index) => ({
+              name: c.name,
+              nameBn: c.nameBn || c.name,
+              symbolEmoji: c.symbolEmoji || "🗳️",
+              symbolName: c.symbolName || "",
+              bio: c.bio || "",
+              bioBn: c.bioBn || c.bio || "",
+              orderIndex: index + 1,
+            })),
+          },
+        },
+      });
+
+      let generatedVotersCount = 0;
+      if (voterAccessType === "CODE_LIST") {
+        const usedCodes = new Set<string>();
+        const votersToCreate = voterLines.map((line, i) => {
+          let code = generateVoterCode(`V${i + 1}`);
+          while (usedCodes.has(code)) {
+            code = generateVoterCode(`V${i + 1}`);
+          }
+          usedCodes.add(code);
+          return {
+            electionId: election.id,
+            voterCode: code,
+            identifier: line,
+            hasVoted: false,
+          };
+        });
+
+        await tx.voter.createMany({ data: votersToCreate });
+        generatedVotersCount = votersToCreate.length;
+      }
+
+      await tx.auditLog.create({
+        data: {
+          electionId: election.id,
+          eventType: "ELECTION_CREATED",
+          details: JSON.stringify({
+            title,
+            candidatesCount: candidates.length,
+            votersCount: generatedVotersCount,
+            voterAccessType,
+          }),
+        },
+      });
+
+      return { election, generatedVotersCount };
     });
 
     return NextResponse.json({
       success: true,
-      electionId: election.id,
-      joinCode: election.joinCode,
-      slug: election.slug,
-      votersCount: generatedVotersCount,
+      electionId: created.election.id,
+      joinCode: created.election.joinCode,
+      slug: created.election.slug,
+      votersCount: created.generatedVotersCount,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating election:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to create election" },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error ? error.message : "Failed to create election";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

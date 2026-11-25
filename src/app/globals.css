@@ -4,6 +4,8 @@
 
 @layer base {
   :root {
+    color-scheme: light dark;
+
     --primary: #006A4E;
     --primary-hover: #00533C;
     --primary-light: #EBF7F2;
@@ -19,6 +21,15 @@
     --text-muted: #64748B;
     --border: #E2E8F0;
     --ring: rgba(0, 106, 78, 0.25);
+
+    accent-color: #006A4E;
+
+    &:has(> head > meta[name="color-scheme"][content="dark"]) {
+      color-scheme: dark;
+    }
+    &:has(> head > meta[name="color-scheme"][content="light"]) {
+      color-scheme: light;
+    }
   }
 
   .dark {
@@ -31,43 +42,82 @@
     --accent-hover: #FB7185;
     --accent-light: #4C0519;
 
-    --bg-page: #0B1120;
-    --bg-card: #111C33;
-    --text-main: #F8FAFC;
+    --bg-page: #0B0E14;
+    --bg-card: #121721;
+    --text-main: #F1F5F9;
     --text-muted: #94A3B8;
-    --border: #1E2E4A;
+    --border: #1E2736;
     --ring: rgba(16, 185, 129, 0.3);
+
+    accent-color: #10B981;
   }
 
   /* High contrast mode for accessibility */
   html.high-contrast,
   .high-contrast {
-    --border: #000000;
+    --border: #0F172A;
   }
 
   html.dark.high-contrast,
   .dark.high-contrast {
-    --border: #FFFFFF;
+    --border: #F8FAFC;
+  }
+
+  html {
+    transition: font-size 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    font-family: var(--font-bengali), var(--font-inter), system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+
+  /* Unified focus indicator inside @layer base so utilities can override cleanly when needed */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  /* Inputs & selects use border + subtle ring without double outer outline */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
   }
 }
 
-html {
-  transition: font-size 0.15s ease;
+/* Native <dialog> scroll containment (progressive enhancement) */
+dialog:modal {
+  overscroll-behavior: contain;
 }
 
-body {
-  background-color: var(--bg-page);
-  color: var(--text-main);
-  font-family: var(--font-bengali), var(--font-inter), system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(2px);
 }
 
-/* Custom focus ring for WCAG 2.1 AA keyboard navigation */
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+/* Accessible visually-hidden utility for screen-reader labels and captions */
+.visually-hidden {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* Tabular numeral helper */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Micro-interactions & animations */
@@ -83,7 +133,13 @@ body {
 }
 
 .animate-fade-in {
-  animation: fadeIn 200ms ease-out forwards;
+  animation: fadeIn 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in {
+    animation: none;
+  }
 }
 
 /* Mobile-first bottom action bar shadow */

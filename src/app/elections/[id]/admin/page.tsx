@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useCallback, useEffect, useId, useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -10,26 +10,29 @@ import {
   Download,
   AlertTriangle,
   StopCircle,
-  PlusCircle,
-  FileText,
   ShieldCheck,
-  CheckCircle2,
   ExternalLink,
   ChevronRight,
   Copy,
   LogOut,
   Activity,
-  Calendar,
 } from "lucide-react";
 import { useLanguage } from "@/i18n/LanguageContext";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { Progress } from "@/components/ui/Progress";
 import { Tabs } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { getTimeRemaining } from "@/lib/date";
+import { downloadCsv } from "@/lib/csv";
+import type {
+  AuditLogItem,
+  ElectionDetail,
+  VoterRosterItem,
+} from "@/types/election";
 
 interface ConfirmActionState {
   isOpen: boolean;
@@ -40,30 +43,97 @@ interface ConfirmActionState {
   isDanger?: boolean;
 }
 
+function formatAuditDetails(
+  log: AuditLogItem,
+  locale: "bn" | "en",
+  formatNum: (val: number | string | null | undefined) => string,
+  formatDate: (date: Date | string, opts?: { includeTime?: boolean; short?: boolean }) => string
+): string {
+  if (!log.details) return "";
+  try {
+    const data = JSON.parse(log.details) as Record<string, unknown>;
+    if (log.eventType === "BALLOT_CAST") {
+      const seq = typeof data.sequenceNumber === "number" ? data.sequenceNumber : "?";
+      const rc = typeof data.receiptCode === "string" ? data.receiptCode : "";
+      if (locale === "bn") {
+        return rc
+          ? `ব্যালট #${formatNum(seq)} গৃহীত (${rc})`
+          : `ব্যালট #${formatNum(seq)} ক্রিপ্টোগ্রাফিক চেইনে গৃহীত`;
+      }
+      return rc
+        ? `Ballot #${seq} sealed (${rc})`
+        : `Ballot #${seq} sealed in hash chain`;
+    }
+    if (log.eventType === "ELECTION_CREATED") {
+      const candidatesCount =
+        typeof data.candidatesCount === "number" ? data.candidatesCount : null;
+      const votersCount =
+        typeof data.votersCount === "number" ? data.votersCount : null;
+      if (locale === "bn") {
+        return candidatesCount !== null
+          ? `নির্বাচন তৈরি হয়েছে • ${formatNum(candidatesCount)} জন প্রার্থী${
+              votersCount ? `, ${formatNum(votersCount)} জন ভোটার` : ""
+            }`
+          : "নির্বাচন তৈরি হয়েছে";
+      }
+      return candidatesCount !== null
+        ? `Election created • ${candidatesCount} candidates${
+            votersCount ? `, ${votersCount} voters` : ""
+          }`
+        : "Election created";
+    }
+    if (log.eventType === "VOTER_LIST_UPLOADED") {
+      const count = typeof data.count === "number" ? data.count : 0;
+      return locale === "bn"
+        ? `${formatNum(count)} জন ভোটারের তালিকা নিবন্ধিত হয়েছে`
+        : `${count} registered voters imported`;
+    }
+    if (log.eventType === "DEADLINE_EXTENDED") {
+      const hours = typeof data.extendedByHours === "number" ? data.extendedByHours : 1;
+      const newEnd =
+        typeof data.newEndTime === "string"
+          ? formatDate(data.newEndTime, { short: true })
+          : "";
+      return locale === "bn"
+        ? `সময়সীমা +${formatNum(hours)} ঘণ্টা বাড়ানো হয়েছে${newEnd ? ` (${newEnd})` : ""}`
+        : `Deadline extended by +${hours}h${newEnd ? ` (${newEnd})` : ""}`;
+    }
+    if (log.eventType === "ELECTION_CLOSED") {
+      return locale === "bn"
+        ? "আয়োজক কর্তৃক নির্বাচন সমাপ্ত করা হয়েছে"
+        : "Election closed by organizer";
+    }
+    if (typeof data.message === "string") {
+      return data.message;
+    }
+  } catch {
+    // Fallback to raw details
+  }
+  return log.details;
+}
+
 function AdminDashboardContent() {
   const params = useParams();
   const router = useRouter();
-  const { locale, formatNum, formatDate, t } = useLanguage();
+  const { locale, useBengaliNumerals, formatNum, formatDate, t } = useLanguage();
   const { showToast } = useToast();
-  const id = params.id as string;
+  const id = decodeURIComponent((params.id as string) || "").trim();
+  const pinInputId = useId();
+  const pinErrorId = useId();
 
-  // Authentication State
   const [adminPin, setAdminPin] = useState("");
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Election Data
-  const [election, setElection] = useState<any>(null);
+  const [election, setElection] = useState<ElectionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Voter Codes & Audit Logs
-  const [voterCodes, setVoterCodes] = useState<any[]>([]);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [voterCodes, setVoterCodes] = useState<VoterRosterItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [activeTab, setActiveTab] = useState<string>("turnout");
 
-  // Modal Confirmation State
   const [confirmModal, setConfirmModal] = useState<ConfirmActionState>({
     isOpen: false,
     action: null,
@@ -74,51 +144,77 @@ function AdminDashboardContent() {
 
   const getStorageKey = (electionId: string) => `votebd_admin_token_${electionId}`;
 
-  const loadElection = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/elections/${id}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load election");
-      setElection(data.election);
-      return data.election;
-    } catch (err: any) {
-      setAuthError(err.message);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchDashboard = useCallback(
+    async (electionId: string, token?: string | null, pin?: string) => {
+      const res = await fetch(`/api/elections/${encodeURIComponent(electionId)}/admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminPin: pin || undefined,
+          sessionToken: token || undefined,
+          action: "GET_DASHBOARD",
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        voters?: VoterRosterItem[];
+        logs?: AuditLogItem[];
+        election?: ElectionDetail;
+        sessionToken?: string;
+        error?: string;
+      };
+      return { ok: res.ok, data };
+    },
+    []
+  );
 
-  // Initial mount: load election and try resuming cached session
   useEffect(() => {
+    if (!id) return;
     let isMounted = true;
+    const controller = new AbortController();
 
     async function init() {
-      const elec = await loadElection();
-      if (!elec || !isMounted) return;
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/elections/${encodeURIComponent(id)}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const data = (await res.json()) as {
+          election?: ElectionDetail;
+          error?: string;
+        };
+        if (!res.ok || !data.election) {
+          throw new Error(data.error || "Failed to load election");
+        }
+        if (!isMounted) return;
 
-      const cachedToken = sessionStorage.getItem(getStorageKey(elec.id));
-      if (cachedToken) {
-        setSessionToken(cachedToken);
-        // Verify cached session
-        try {
-          const verifyRes = await fetch(`/api/elections/${elec.id}/admin`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionToken: cachedToken, action: "GET_CODES" }),
-          });
-          const verifyData = await verifyRes.json();
-          if (verifyRes.ok && verifyData.success) {
+        const elec = data.election;
+        setElection(elec);
+
+        const cachedToken = sessionStorage.getItem(getStorageKey(elec.id));
+        if (cachedToken) {
+          const dash = await fetchDashboard(elec.id, cachedToken);
+          if (!isMounted) return;
+          if (dash.ok && dash.data.success) {
+            setSessionToken(dash.data.sessionToken || cachedToken);
             setIsAuthenticated(true);
-            if (verifyData.voters) setVoterCodes(verifyData.voters);
-            // Fetch audit logs as well
-            fetchAuditLogs(elec.id, cachedToken);
+            if (dash.data.voters) setVoterCodes(dash.data.voters);
+            if (dash.data.logs) setAuditLogs(dash.data.logs);
+            if (dash.data.election) setElection(dash.data.election);
           } else {
             sessionStorage.removeItem(getStorageKey(elec.id));
           }
-        } catch {
-          sessionStorage.removeItem(getStorageKey(elec.id));
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (isMounted) {
+          const msg = err instanceof Error ? err.message : t("errorGeneric");
+          setAuthError(msg);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
         }
       }
     }
@@ -126,36 +222,41 @@ function AdminDashboardContent() {
     init();
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [id]);
+  }, [id, fetchDashboard, t]);
 
-  // Login with PIN
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminPin) return;
+    if (!adminPin || !election) return;
 
     setActionLoading(true);
     setAuthError(null);
 
     try {
-      const res = await fetch(`/api/elections/${election.id}/admin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminPin }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Invalid PIN");
+      const dash = await fetchDashboard(election.id, null, adminPin);
+      if (!dash.ok || !dash.data.success) {
+        throw new Error(dash.data.error || "Invalid PIN");
       }
+
       setIsAuthenticated(true);
-      if (data.sessionToken) {
-        setSessionToken(data.sessionToken);
-        sessionStorage.setItem(getStorageKey(election.id), data.sessionToken);
+      if (dash.data.sessionToken) {
+        setSessionToken(dash.data.sessionToken);
+        sessionStorage.setItem(getStorageKey(election.id), dash.data.sessionToken);
       }
-      showToast(locale === "bn" ? "অ্যাডমিন প্যানেলে সফলভাবে প্রবেশ করেছেন" : "Authenticated successfully", "success");
-      fetchAdminData(data.sessionToken);
-    } catch (err: any) {
-      setAuthError(err.message);
+      if (dash.data.voters) setVoterCodes(dash.data.voters);
+      if (dash.data.logs) setAuditLogs(dash.data.logs);
+      if (dash.data.election) setElection(dash.data.election);
+
+      showToast(
+        locale === "bn"
+          ? "অ্যাডমিন প্যানেলে প্রবেশ সফল হয়েছে"
+          : "Authenticated",
+        "success"
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t("errorGeneric");
+      setAuthError(message);
     } finally {
       setActionLoading(false);
     }
@@ -171,50 +272,9 @@ function AdminDashboardContent() {
     showToast(locale === "bn" ? "সেশন লক করা হয়েছে" : "Session locked", "info");
   };
 
-  const fetchAuditLogs = async (electionId: string, token: string | null) => {
-    try {
-      const auditRes = await fetch(`/api/elections/${electionId}/admin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adminPin: adminPin || undefined,
-          sessionToken: token || undefined,
-          action: "GET_AUDIT",
-        }),
-      });
-      const auditData = await auditRes.json();
-      if (auditData.logs) setAuditLogs(auditData.logs);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Fetch Voter Codes & Audit Logs
-  const fetchAdminData = async (token?: string | null) => {
-    const activeToken = token ?? sessionToken;
-    try {
-      // Fetch voter codes
-      const codesRes = await fetch(`/api/elections/${election.id}/admin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adminPin: adminPin || undefined,
-          sessionToken: activeToken || undefined,
-          action: "GET_CODES",
-        }),
-      });
-      const codesData = await codesRes.json();
-      if (codesData.voters) setVoterCodes(codesData.voters);
-
-      // Fetch audit logs
-      await fetchAuditLogs(election.id, activeToken);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Open confirmation modal for destructive or major actions
-  const promptAction = (action: "CLOSE" | "EXTEND_HOUR" | "EXTEND_DAY" | "DUPLICATE") => {
+  const promptAction = (
+    action: "CLOSE" | "EXTEND_HOUR" | "EXTEND_DAY" | "DUPLICATE"
+  ) => {
     if (action === "CLOSE") {
       setConfirmModal({
         isOpen: true,
@@ -228,11 +288,11 @@ function AdminDashboardContent() {
       setConfirmModal({
         isOpen: true,
         action: "EXTEND_HOUR",
-        title: `${t("confirmExtendTitle")} (+1 hour)`,
+        title: `${t("confirmExtendTitle")} (+1h)`,
         description:
           locale === "bn"
             ? "নির্বাচনের শেষ সময় ১ ঘণ্টা বৃদ্ধি করা হবে এবং স্ট্যাটাস সক্রিয় থাকবে।"
-            : "The election closing time will be extended by 1 hour and status kept active.",
+            : "The election closing time will be extended by 1 hour and kept active.",
         confirmLabel: t("btnExtend1Hour"),
         isDanger: false,
       });
@@ -240,7 +300,7 @@ function AdminDashboardContent() {
       setConfirmModal({
         isOpen: true,
         action: "EXTEND_DAY",
-        title: `${t("confirmExtendTitle")} (+24 hours)`,
+        title: `${t("confirmExtendTitle")} (+24h)`,
         description:
           locale === "bn"
             ? "নির্বাচনের শেষ সময় ২৪ ঘণ্টা বৃদ্ধি করা হবে।"
@@ -260,15 +320,14 @@ function AdminDashboardContent() {
     }
   };
 
-  // Execute confirmed action
   const executeConfirmedAction = async () => {
     const action = confirmModal.action;
-    if (!action) return;
+    if (!action || !election) return;
 
     setActionLoading(true);
 
     try {
-      const res = await fetch(`/api/elections/${election.id}/admin`, {
+      const res = await fetch(`/api/elections/${encodeURIComponent(election.id)}/admin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -277,10 +336,20 @@ function AdminDashboardContent() {
           action,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = (await res.json()) as {
+        duplicatedJoinCode?: string;
+        sessionToken?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Action failed");
 
-      setConfirmModal({ isOpen: false, action: null, title: "", description: "", confirmLabel: "" });
+      setConfirmModal({
+        isOpen: false,
+        action: null,
+        title: "",
+        description: "",
+        confirmLabel: "",
+      });
 
       if (action === "DUPLICATE") {
         showToast(t("duplicateSuccess"), "success");
@@ -289,44 +358,57 @@ function AdminDashboardContent() {
         }
       } else {
         showToast(
-          locale === "bn" ? "অ্যাকশন সফলভাবে কার্যকর করা হয়েছে!" : "Action executed successfully!",
+          locale === "bn"
+            ? "অ্যাকশন সফলভাবে কার্যকর হয়েছে"
+            : "Action completed",
           "success"
         );
-        loadElection();
-        fetchAdminData();
+        const activeToken = data.sessionToken || sessionToken;
+        const dash = await fetchDashboard(election.id, activeToken, adminPin);
+        if (dash.ok && dash.data.success) {
+          if (dash.data.voters) setVoterCodes(dash.data.voters);
+          if (dash.data.logs) setAuditLogs(dash.data.logs);
+          if (dash.data.election) setElection(dash.data.election);
+        }
       }
-    } catch (err: any) {
-      showToast(err.message || "Failed to execute action", "error");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to execute action";
+      showToast(message, "error");
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Download Voter Codes CSV
   const downloadVoterCodesCsv = () => {
-    if (voterCodes.length === 0) {
-      showToast(locale === "bn" ? "কোনো ভোটার পাওয়া যায়নি" : "No voters found to export", "warning");
+    if (!election || voterCodes.length === 0) {
+      showToast(
+        locale === "bn" ? "কোনো ভোটার পাওয়া যায়নি" : "No voters found to export",
+        "warning"
+      );
       return;
     }
-    let csv = "Voter Code,Identifier,Status,Voted At (BST)\n";
+    const rows: Array<Array<string | number | null | undefined>> = [
+      ["Voter Code", "Identifier", "Status", "Voted At (BST)"],
+    ];
     for (const v of voterCodes) {
-      csv += `"${v.voterCode}","${v.identifier || ""}","${v.hasVoted ? "VOTED" : "PENDING"}","${
-        v.votedAt ? formatDate(v.votedAt) : ""
-      }"\n`;
+      rows.push([
+        v.voterCode,
+        v.identifier || "",
+        v.hasVoted ? "VOTED" : "PENDING",
+        v.votedAt ? formatDate(v.votedAt) : "",
+      ]);
     }
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${election.slug}-voter-codes.csv`;
-    a.click();
-    showToast(locale === "bn" ? "ভোটার তালিকা ডাউনলোড সম্পন্ন" : "Voter codes exported to CSV", "success");
+    downloadCsv(`${election.slug}-voter-codes.csv`, rows);
+    showToast(
+      locale === "bn" ? "ভোটার তালিকা ডাউনলোড সম্পন্ন" : "Voter codes exported to CSV",
+      "success"
+    );
   };
 
   if (loading) {
     return (
       <div className="max-w-md mx-auto px-4 py-24 text-center">
-        <div className="w-12 h-12 border-4 border-[#006A4E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <div className="w-10 h-10 border-4 border-[#006A4E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-slate-500">{t("loading")}</p>
       </div>
     );
@@ -336,9 +418,13 @@ function AdminDashboardContent() {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <EmptyState
-          icon={<AlertTriangle className="w-8 h-8 text-red-500" />}
-          title="Election Not Found"
-          description="We could not find the election you requested. Check the code or URL."
+          icon={<AlertTriangle className="w-8 h-8 text-[#F42A41]" />}
+          title={locale === "bn" ? "নির্বাচন পাওয়া যায়নি" : "Election not found"}
+          description={
+            locale === "bn"
+              ? "প্রদত্ত কোড বা লিংকের সাথে কোনো নির্বাচন মেলেনি।"
+              : "We could not find the election you requested. Check the code or URL."
+          }
           actionLabel={t("navHome")}
           onAction={() => router.push("/")}
         />
@@ -346,42 +432,55 @@ function AdminDashboardContent() {
     );
   }
 
-  // IF NOT AUTHENTICATED: Show PIN Gate
+  // PIN GATE
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 sm:py-24 w-full animate-fade-in">
-        <Card className="p-6 sm:p-8 space-y-6 border-slate-200 dark:border-slate-800 shadow-xl">
+        <Card className="p-6 sm:p-8 space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-[#EBF7F2] text-[#006A4E] flex items-center justify-center mx-auto shadow-sm">
-              <Lock className="w-7 h-7" />
+            <div className="w-12 h-12 rounded-xl bg-[#EBF7F2] dark:bg-emerald-950/60 text-[#006A4E] dark:text-[#34D399] flex items-center justify-center mx-auto border border-emerald-200/70 dark:border-emerald-800/40">
+              <Lock className="w-6 h-6" strokeWidth={1.75} />
             </div>
-            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">
               {t("adminTitle")}
             </h1>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {locale === "bn" ? election.titleBn || election.title : election.title}
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+              <label
+                htmlFor={pinInputId}
+                className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+              >
                 {t("adminPinPrompt")}
               </label>
               <input
+                id={pinInputId}
+                name="adminPin"
                 type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
                 maxLength={8}
                 autoFocus
                 value={adminPin}
+                aria-invalid={authError ? "true" : "false"}
+                aria-describedby={authError ? pinErrorId : undefined}
                 onChange={(e) => {
                   setAdminPin(e.target.value);
                   setAuthError(null);
                 }}
                 placeholder={t("adminPinPlaceholder")}
-                className="w-full px-4 py-3 text-center text-xl font-mono uppercase tracking-widest rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#006A4E] focus:outline-none transition-all"
+                className="w-full h-12 px-4 text-center text-xl font-mono tracking-wider rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#161C28] text-slate-900 dark:text-white placeholder:text-slate-400 placeholder:text-sm placeholder:tracking-normal focus:border-[#006A4E] dark:focus:border-[#10B981] focus:ring-2 focus:ring-[#006A4E]/15 transition-[border-color,box-shadow]"
               />
               {authError && (
-                <p className="text-xs text-red-500 mt-2 text-center font-medium animate-fade-in">
+                <p
+                  id={pinErrorId}
+                  role="alert"
+                  className="text-xs text-red-600 dark:text-red-400 mt-2 text-center font-medium"
+                >
                   {authError}
                 </p>
               )}
@@ -397,12 +496,11 @@ function AdminDashboardContent() {
             </Button>
           </form>
 
-          {/* Helper for demo PIN */}
           {election.joinCode === "CR-2024" && (
-            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-center text-slate-500 border border-slate-200 dark:border-slate-700">
+            <div className="p-3 rounded-xl bg-slate-100 dark:bg-[#161C28] text-xs text-center text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/10 font-mono tabular-nums">
               {locale === "bn"
-                ? "💡 ডেমো নির্বাচনের অ্যাডমিন পিন: 1234"
-                : "💡 Demo Election Admin PIN: 1234"}
+                ? "ডেমো নির্বাচনের অ্যাডমিন পিন: 1234"
+                : "Demo election admin PIN: 1234"}
             </div>
           )}
         </Card>
@@ -411,103 +509,112 @@ function AdminDashboardContent() {
   }
 
   const isClosed = election.status === "CLOSED";
-  const timeRem = getTimeRemaining(election.endTime, locale, true);
+  const timeRem = getTimeRemaining(election.endTime, locale, useBengaliNumerals);
 
-  // AUTHENTICATED ADMIN DASHBOARD
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12 w-full space-y-6 animate-fade-in">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-white/10">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge variant={isClosed ? "neutral" : "live"}>
               {isClosed ? t("resultsClosedBadge") : t("resultsLiveBadge")}
             </Badge>
-            <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+            <span className="text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md tabular-nums">
               {election.joinCode}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tracking-tight">
             {locale === "bn" ? election.titleBn || election.title : election.title}
           </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/vote/${election.joinCode}`} target="_blank">
-            <Button variant="secondary" size="sm" className="gap-1.5">
+          <Link href={`/vote/${encodeURIComponent(election.joinCode)}`} target="_blank">
+            <Button variant="secondary" size="sm">
               <span>{t("btnGoToVote")}</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5" strokeWidth={1.75} />
             </Button>
           </Link>
-          <Link href={`/elections/${election.joinCode}/results`}>
-            <Button variant="primary" size="sm" className="gap-1.5">
+          <Link href={`/elections/${encodeURIComponent(election.joinCode)}/results`}>
+            <Button variant="primary" size="sm">
               <span>{t("btnGoToResults")}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.75} />
             </Button>
           </Link>
           <Button
             onClick={handleLogout}
             variant="outline"
             size="sm"
-            className="gap-1.5 text-slate-500 hover:text-red-600"
-            title="Lock admin session"
+            className="text-slate-600 dark:text-slate-300 hover:text-red-600"
+            title={t("btnLockAdmin")}
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-3.5 h-3.5" strokeWidth={1.75} />
+            <span className="sm:hidden">{locale === "bn" ? "লক" : "Lock"}</span>
             <span className="hidden sm:inline">{t("btnLockAdmin")}</span>
           </Button>
         </div>
       </div>
 
-      {/* QUICK STATS & CONTROLS */}
+      {/* QUICK STATS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="p-5 border-slate-200 dark:border-slate-800">
-          <span className="text-xs text-slate-500 block mb-1">
+        <Card className="p-5">
+          <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
             {t("totalVotesCast")}
           </span>
-          <div className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <div className="text-3xl font-semibold text-slate-900 dark:text-white tracking-tight tabular-nums">
             {formatNum(election.totalBallotsCast)}
           </div>
-          <span className="text-xs text-slate-400 mt-1 block">
-            {locale === "bn"
-              ? `${formatNum(election.totalEligibleVoters)} জনের মধ্যে`
-              : `out of ${election.totalEligibleVoters} eligible voters`}
+          <span className="text-xs text-slate-400 mt-1 block tabular-nums">
+            {election.voterAccessType === "CODE_LIST"
+              ? locale === "bn"
+                ? `${formatNum(election.totalEligibleVoters)} জনের মধ্যে`
+                : `out of ${election.totalEligibleVoters} eligible voters`
+              : locale === "bn"
+              ? "উন্মুক্ত জয়েন কোড নির্বাচন"
+              : "Open join-code election"}
           </span>
         </Card>
 
-        <Card className="p-5 border-slate-200 dark:border-slate-800">
-          <span className="text-xs text-slate-500 block mb-1">
+        <Card className="p-5">
+          <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
             {t("turnoutRate")}
           </span>
-          <div className="text-3xl font-extrabold text-[#006A4E] dark:text-[#34D399] tracking-tight">
-            {formatNum(election.turnoutPercentage)}%
-          </div>
-          <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full mt-2 overflow-hidden">
-            <div
-              className="bg-[#006A4E] h-full rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(election.turnoutPercentage, 100)}%` }}
-            />
-          </div>
+          {election.turnoutPercentage !== null ? (
+            <>
+              <div className="text-3xl font-semibold text-[#006A4E] dark:text-[#34D399] tracking-tight tabular-nums">
+                {formatNum(election.turnoutPercentage)}%
+              </div>
+              <Progress value={election.turnoutPercentage} className="mt-2" />
+            </>
+          ) : (
+            <div className="text-3xl font-semibold text-[#006A4E] dark:text-[#34D399] tracking-tight tabular-nums">
+              {formatNum(election.totalBallotsCast)}
+            </div>
+          )}
         </Card>
 
-        <Card className="p-5 border-slate-200 dark:border-slate-800">
-          <span className="text-xs text-slate-500 block mb-1">
+        <Card className="p-5">
+          <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
             {t("timeRemainingLabel")}
           </span>
-          <div className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-1">
-            <Clock className="w-4 h-4 text-[#006A4E]" />
-            <span>{isClosed ? (locale === "bn" ? "সমাপ্ত" : "Closed") : timeRem.label}</span>
+          <div className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 mt-1 tabular-nums">
+            <Clock className="w-4 h-4 text-[#006A4E] dark:text-[#34D399]" strokeWidth={1.75} />
+            <span>
+              {isClosed ? (locale === "bn" ? "সমাপ্ত" : "Closed") : timeRem.label}
+            </span>
           </div>
-          <span className="text-[11px] text-slate-400 mt-1 block font-mono">
+          <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
             {formatDate(election.endTime, { short: true })}
           </span>
         </Card>
       </div>
 
       {/* ADMIN CONTROL ACTIONS */}
-      <Card className="p-5 space-y-4 border-slate-200 dark:border-slate-800 shadow-sm">
-        <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-          {locale === "bn" ? "জরুরী নিয়ন্ত্রণ প্যানেল" : "Administrative Controls"}
-        </h3>
+      <Card className="p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          {locale === "bn" ? "নির্বাচন নিয়ন্ত্রণ" : "Administrative controls"}
+        </h2>
 
         <div className="flex flex-wrap gap-2.5">
           {!isClosed && (
@@ -516,9 +623,8 @@ function AdminDashboardContent() {
               disabled={actionLoading}
               variant="danger"
               size="sm"
-              className="gap-1.5"
             >
-              <StopCircle className="w-4 h-4" />
+              <StopCircle className="w-4 h-4" strokeWidth={1.75} />
               <span>{t("btnEndNow")}</span>
             </Button>
           )}
@@ -528,9 +634,8 @@ function AdminDashboardContent() {
             disabled={actionLoading}
             variant="outline"
             size="sm"
-            className="gap-1.5"
           >
-            <Clock className="w-4 h-4 text-[#006A4E]" />
+            <Clock className="w-4 h-4 text-[#006A4E] dark:text-[#34D399]" strokeWidth={1.75} />
             <span>{t("btnExtend1Hour")}</span>
           </Button>
 
@@ -539,9 +644,8 @@ function AdminDashboardContent() {
             disabled={actionLoading}
             variant="outline"
             size="sm"
-            className="gap-1.5"
           >
-            <Clock className="w-4 h-4 text-[#006A4E]" />
+            <Clock className="w-4 h-4 text-[#006A4E] dark:text-[#34D399]" strokeWidth={1.75} />
             <span>{t("btnExtend1Day")}</span>
           </Button>
 
@@ -550,19 +654,13 @@ function AdminDashboardContent() {
             disabled={actionLoading}
             variant="outline"
             size="sm"
-            className="gap-1.5"
           >
-            <Copy className="w-4 h-4 text-slate-500" />
+            <Copy className="w-4 h-4 text-slate-500" strokeWidth={1.75} />
             <span>{t("btnDuplicate")}</span>
           </Button>
 
-          <Button
-            onClick={downloadVoterCodesCsv}
-            variant="secondary"
-            size="sm"
-            className="gap-1.5"
-          >
-            <Download className="w-4 h-4" />
+          <Button onClick={downloadVoterCodesCsv} variant="secondary" size="sm">
+            <Download className="w-4 h-4" strokeWidth={1.75} />
             <span>{t("btnDownloadCodes")}</span>
           </Button>
         </div>
@@ -573,205 +671,243 @@ function AdminDashboardContent() {
         <Tabs
           activeTab={activeTab}
           onChange={(tabId) => setActiveTab(tabId)}
+          ariaLabel={locale === "bn" ? "অ্যাডমিন প্যানেল বিভাগ" : "Admin dashboard sections"}
           tabs={[
             {
               id: "turnout",
-              label: locale === "bn" ? "সাম্প্রতিক কার্যকলাপ" : "Live Activity",
+              label: locale === "bn" ? "সাম্প্রতিক কার্যকলাপ" : "Live activity",
               icon: <Activity className="w-4 h-4" />,
-              badge: election.recentBallotActivity?.length || 0,
+              badge: formatNum(election.recentBallotActivity?.length || 0),
             },
             {
               id: "voters",
-              label: locale === "bn" ? "ভোটার তালিকা ও কোড" : "Voter Roster & Codes",
+              label: locale === "bn" ? "ভোটার তালিকা ও কোড" : "Voter roster & codes",
               icon: <Users className="w-4 h-4" />,
-              badge: voterCodes.length || undefined,
+              badge: voterCodes.length > 0 ? formatNum(voterCodes.length) : undefined,
             },
             {
               id: "audit",
               label: t("auditLogHeading"),
               icon: <ShieldCheck className="w-4 h-4" />,
-              badge: auditLogs.length || undefined,
+              badge: auditLogs.length > 0 ? formatNum(auditLogs.length) : undefined,
             },
           ]}
         />
 
         {/* TAB 1: RECENT LIVE ACTIVITY */}
-        {activeTab === "turnout" && (
-          <Card className="p-5 space-y-3 border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t("liveActivityHeading")}
-              </h4>
-              <span className="text-xs text-slate-400">
-                {locale === "bn" ? "প্রার্থীর নাম সর্বদা গোপন" : "Candidate choice decoupled"}
-              </span>
-            </div>
-
-            {(!election.recentBallotActivity || election.recentBallotActivity.length === 0) ? (
-              <EmptyState
-                icon={<Activity className="w-8 h-8 text-slate-400" />}
-                title={t("noActivityYet")}
-                description={
-                  locale === "bn"
-                    ? "ভোটারদের ভোট কোড সরবরাহ করে নির্বাচন শুরু করুন।"
-                    : "Share the election join code or voter codes to start receiving ballots."
-                }
-              />
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {election.recentBallotActivity.map((b: any) => (
-                  <div
-                    key={b.sequenceNumber}
-                    className="py-3 flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-[#006A4E] dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center font-bold text-[10px]">
-                        #{formatNum(b.sequenceNumber)}
-                      </span>
-                      <div>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {locale === "bn" ? "গোপন ব্যালট কাস্ট হয়েছে" : "Anonymous Ballot Cast"}
-                        </span>
-                        <span className="text-slate-400 ml-2 font-mono">
-                          {b.receiptCode}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-slate-500 font-mono">
-                      {formatDate(b.castAt)}
-                    </span>
-                  </div>
-                ))}
+        <div
+          role="tabpanel"
+          aria-labelledby="tab-turnout"
+          hidden={activeTab !== "turnout"}
+        >
+          {activeTab === "turnout" && (
+            <Card className="p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {t("liveActivityHeading")}
+                </h3>
+                <span className="text-xs text-slate-400">
+                  {locale === "bn" ? "প্রার্থীর নাম সর্বদা গোপন" : "Candidate choice decoupled"}
+                </span>
               </div>
-            )}
-          </Card>
-        )}
+
+              {!election.recentBallotActivity || election.recentBallotActivity.length === 0 ? (
+                <EmptyState
+                  icon={<Activity className="w-8 h-8 text-slate-400" />}
+                  title={t("noActivityYet")}
+                  description={
+                    locale === "bn"
+                      ? "ভোটারদের কোড সরবরাহ করে নির্বাচন শুরু করুন।"
+                      : "Share the election join code or voter codes to start receiving ballots."
+                  }
+                />
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                  {election.recentBallotActivity.map((b) => (
+                    <div
+                      key={b.sequenceNumber}
+                      className="py-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-full bg-emerald-100 text-[#006A4E] dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center font-semibold text-[11px] font-mono tabular-nums shrink-0">
+                          #{formatNum(b.sequenceNumber)}
+                        </span>
+                        <div>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {locale === "bn" ? "গোপন ব্যালট কাস্ট হয়েছে" : "Anonymous ballot cast"}
+                          </span>
+                          <span className="text-slate-400 ml-2 font-mono tabular-nums">
+                            {b.receiptCode}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                        {formatDate(b.castAt)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
 
         {/* TAB 2: VOTER CODES */}
-        {activeTab === "voters" && (
-          <Card className="p-5 space-y-4 border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {locale === "bn" ? "নিবন্ধিত ভোটার ও কোড" : "Registered Voters"}
-                </h4>
-                <p className="text-xs text-slate-500">
-                  {locale === "bn"
-                    ? "কারা ভোট দিয়েছেন তা দেখা যাবে, কিন্তু কে কাকে ভোট দিয়েছেন তা সম্পূর্ণ গোপন।"
-                    : "Track voter turnout safely without compromising secret ballot privacy."}
-                </p>
+        <div
+          role="tabpanel"
+          aria-labelledby="tab-voters"
+          hidden={activeTab !== "voters"}
+        >
+          {activeTab === "voters" && (
+            <Card className="p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    {locale === "bn" ? "নিবন্ধিত ভোটার ও কোড" : "Registered voters"}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {locale === "bn"
+                      ? "কারা ভোট দিয়েছেন তা দেখা যাবে, কিন্তু কে কাকে ভোট দিয়েছেন তা সম্পূর্ণ গোপন।"
+                      : "Track turnout without revealing how any voter voted."}
+                  </p>
+                </div>
+                <Button onClick={downloadVoterCodesCsv} size="sm" variant="outline">
+                  <Download className="w-3.5 h-3.5" strokeWidth={1.75} />
+                  <span>CSV</span>
+                </Button>
               </div>
-              <Button onClick={downloadVoterCodesCsv} size="sm" variant="outline">
-                <Download className="w-3.5 h-3.5 mr-1" />
-                CSV
-              </Button>
-            </div>
 
-            {voterCodes.length === 0 ? (
-              <EmptyState
-                icon={<Users className="w-8 h-8 text-slate-400" />}
-                title={locale === "bn" ? "কোনো নির্দিষ্ট ভোটার কোড নেই" : "No Specific Voter Codes"}
-                description={
-                  locale === "bn"
-                    ? "এটি উন্মুক্ত বা কোডবিহীন নির্বাচন হতে পারে।"
-                    : "This election may be open or utilizing device fingerprinting."
-                }
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-400 uppercase tracking-wider text-[11px]">
-                      <th className="py-2.5 font-semibold">
-                        {locale === "bn" ? "ভোটার কোড" : "Voter Code"}
-                      </th>
-                      <th className="py-2.5 font-semibold">
-                        {locale === "bn" ? "পরিচয় / রোল" : "Identifier / Roll"}
-                      </th>
-                      <th className="py-2.5 font-semibold">
-                        {locale === "bn" ? "ভোট স্ট্যাটাস" : "Status"}
-                      </th>
-                      <th className="py-2.5 font-semibold">
-                        {locale === "bn" ? "সময়" : "Timestamp"}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {voterCodes.map((v) => (
-                      <tr key={v.voterCode}>
-                        <td className="py-2.5 font-mono font-bold text-slate-900 dark:text-white">
-                          {v.voterCode}
-                        </td>
-                        <td className="py-2.5 text-slate-600 dark:text-slate-400">
-                          {v.identifier || "—"}
-                        </td>
-                        <td className="py-2.5">
-                          {v.hasVoted ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                              {locale === "bn" ? "ভোট সম্পন্ন ✓" : "Voted ✓"}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                              {locale === "bn" ? "অপেক্ষমান" : "Pending"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 text-slate-500 font-mono text-[11px]">
-                          {v.votedAt ? formatDate(v.votedAt) : "—"}
-                        </td>
+              {voterCodes.length === 0 ? (
+                <EmptyState
+                  icon={<Users className="w-8 h-8 text-slate-400" />}
+                  title={locale === "bn" ? "কোনো নির্দিষ্ট ভোটার কোড নেই" : "No voter roster"}
+                  description={
+                    locale === "bn"
+                      ? "উন্মুক্ত জয়েন কোড নির্বাচনে আগাম ভোটার তালিকা থাকে না।"
+                      : "Open join-code elections do not require pre-generated voter codes."
+                  }
+                />
+              ) : (
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label={locale === "bn" ? "ভোটার তালিকা" : "Registered voter roster"}
+                  className="overflow-x-auto"
+                >
+                  <table className="w-full text-left text-xs border-collapse">
+                    <caption className="visually-hidden">
+                      {locale === "bn" ? "ভোটার কোড ও অংশগ্রহণ তালিকা" : "Voter codes and participation status"}
+                    </caption>
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 text-xs">
+                        <th scope="col" className="py-2.5 pr-4 font-medium">
+                          {locale === "bn" ? "ভোটার কোড" : "Voter code"}
+                        </th>
+                        <th scope="col" className="py-2.5 pr-4 font-medium">
+                          {locale === "bn" ? "পরিচয় / রোল" : "Identifier"}
+                        </th>
+                        <th scope="col" className="py-2.5 pr-4 font-medium">
+                          {locale === "bn" ? "অবস্থা" : "Status"}
+                        </th>
+                        <th scope="col" className="py-2.5 font-medium">
+                          {locale === "bn" ? "সময়" : "Timestamp"}
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        )}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                      {voterCodes.map((v) => (
+                        <tr key={v.voterCode}>
+                          <td className="py-2.5 pr-4 font-mono font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                            {v.voterCode}
+                          </td>
+                          <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-400">
+                            {v.identifier || "—"}
+                          </td>
+                          <td className="py-2.5 pr-4 whitespace-nowrap">
+                            {v.hasVoted ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300">
+                                {locale === "bn" ? "ভোট সম্পন্ন" : "Voted"}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                {locale === "bn" ? "অপেক্ষমাণ" : "Pending"}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 text-slate-500 dark:text-slate-400 font-mono text-[11px] whitespace-nowrap tabular-nums">
+                            {v.votedAt ? formatDate(v.votedAt) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
 
         {/* TAB 3: AUDIT LOGS */}
-        {activeTab === "audit" && (
-          <Card className="p-5 space-y-3 border-slate-200 dark:border-slate-800">
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-              {t("auditLogHeading")}
-            </h4>
-            {auditLogs.length === 0 ? (
-              <EmptyState
-                icon={<ShieldCheck className="w-8 h-8 text-slate-400" />}
-                title="No Audit Logs Recorded"
-                description="Administrative changes and lifecycle events will be listed here."
-              />
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {auditLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="py-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1"
-                  >
-                    <div>
-                      <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 mr-2 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                        {log.eventType}
-                      </span>
-                      <span className="text-slate-500 font-mono text-[11px]">
-                        {log.details}
+        <div
+          role="tabpanel"
+          aria-labelledby="tab-audit"
+          hidden={activeTab !== "audit"}
+        >
+          {activeTab === "audit" && (
+            <Card className="p-5 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                {t("auditLogHeading")}
+              </h3>
+              {auditLogs.length === 0 ? (
+                <EmptyState
+                  icon={<ShieldCheck className="w-8 h-8 text-slate-400" />}
+                  title={locale === "bn" ? "কোনো অডিট লগ নেই" : "No audit logs recorded"}
+                  description={
+                    locale === "bn"
+                      ? "নির্বাচনের সকল কার্যক্রম এখানে লিপিবদ্ধ থাকবে।"
+                      : "Administrative changes and lifecycle events will be listed here."
+                  }
+                />
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                  {auditLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-medium text-[#006A4E] dark:text-[#34D399] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
+                          {log.eventType}
+                        </span>
+                        <span className="text-slate-700 dark:text-slate-300">
+                          {formatAuditDetails(log, locale, formatNum, formatDate)}
+                        </span>
+                      </div>
+                      <span className="text-slate-400 shrink-0 font-mono text-[11px] tabular-nums">
+                        {formatDate(log.timestamp)}
                       </span>
                     </div>
-                    <span className="text-slate-400 shrink-0 font-mono text-[11px]">
-                      {formatDate(log.timestamp)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        )}
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
       </div>
 
       {/* Confirmation Modal */}
       <Modal
         isOpen={confirmModal.isOpen}
         onClose={() =>
-          setConfirmModal({ isOpen: false, action: null, title: "", description: "", confirmLabel: "" })
+          setConfirmModal({
+            isOpen: false,
+            action: null,
+            title: "",
+            description: "",
+            confirmLabel: "",
+          })
         }
+        preventClose={actionLoading}
         title={confirmModal.title}
         description={confirmModal.description}
       >
@@ -781,7 +917,13 @@ function AdminDashboardContent() {
               variant="outline"
               size="md"
               onClick={() =>
-                setConfirmModal({ isOpen: false, action: null, title: "", description: "", confirmLabel: "" })
+                setConfirmModal({
+                  isOpen: false,
+                  action: null,
+                  title: "",
+                  description: "",
+                  confirmLabel: "",
+                })
               }
               disabled={actionLoading}
             >
@@ -807,7 +949,7 @@ export default function AdminDashboardPage() {
     <Suspense
       fallback={
         <div className="max-w-md mx-auto px-4 py-24 text-center">
-          <div className="w-12 h-12 border-4 border-[#006A4E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-10 h-10 border-4 border-[#006A4E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-sm text-slate-500">Loading admin dashboard...</p>
         </div>
       }

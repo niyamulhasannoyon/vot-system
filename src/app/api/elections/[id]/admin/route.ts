@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdminPin, generateJoinCode, generateVoterCode } from "@/lib/hasher";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { buildElectionPayload, findElectionByIdentifier } from "@/lib/electionLookup";
+import {
+  createAdminSessionToken,
+  generateJoinCode,
+  verifyAdminPin,
+  verifyAdminSessionToken,
+} from "@/lib/hasher";
+import { checkRateLimit, getClientIp, resetRateLimit } from "@/lib/rateLimit";
 import { adminActionSchema } from "@/lib/validations";
 
 export async function POST(
@@ -10,11 +16,16 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const ip = req.headers.get("x-forwarded-for") || "unknown-ip";
+    const ip = getClientIp(req);
 
-    const rawBody = await req.json();
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+    }
+
     const parseResult = adminActionSchema.safeParse(rawBody);
-
     if (!parseResult.success) {
       const firstError = parseResult.error.issues[0]?.message || "Invalid input";
       return NextResponse.json({ error: firstError }, { status: 400 });
@@ -22,46 +33,44 @@ export async function POST(
 
     const { adminPin, sessionToken, action } = parseResult.data;
 
-    const election = await prisma.election.findFirst({
-      where: {
-        OR: [{ id }, { joinCode: id.toUpperCase() }, { slug: id.toLowerCase() }],
-      },
-      include: {
-        options: true,
-      },
-    });
-
+    const election = await findElectionByIdentifier(id);
     if (!election) {
       return NextResponse.json({ error: "Election not found." }, { status: 404 });
     }
 
-    // Rate-limit PIN verification attempts: max 5 attempts per 60 seconds per IP
-    const rateCheck = checkRateLimit(`admin_pin:${ip}:${election.id}`, 5, 60 * 1000);
-    if (!rateCheck.success) {
-      return NextResponse.json(
-        { error: `Too many invalid attempts. Account temporarily locked for ${rateCheck.retryAfterSeconds} seconds.` },
-        { status: 429 }
-      );
-    }
-
-    // Check if valid session token or verify PIN
+    // Authenticate via signed HMAC session token first (does NOT consume PIN brute-force quota)
     let isAuthenticated = false;
-    const expectedToken = Buffer.from(`${election.id}:${election.adminKey.slice(-12)}`).toString("base64");
+    let issuedToken = sessionToken;
 
-    if (sessionToken && sessionToken === expectedToken) {
+    if (sessionToken && verifyAdminSessionToken(sessionToken, election.id, election.adminKey)) {
       isAuthenticated = true;
     } else if (adminPin) {
+      // Rate limit PIN verification attempts: max 5 attempts per 60 seconds per IP+election
+      const rateKey = `admin_pin:${ip}:${election.id}`;
+      const rateCheck = checkRateLimit(rateKey, 5, 60 * 1000);
+      if (!rateCheck.success) {
+        return NextResponse.json(
+          {
+            error: `Too many invalid attempts. Account temporarily locked for ${rateCheck.retryAfterSeconds} seconds.`,
+          },
+          { status: 429 }
+        );
+      }
+
       isAuthenticated = await verifyAdminPin(adminPin, election.adminKey);
+      if (isAuthenticated) {
+        resetRateLimit(rateKey);
+        issuedToken = createAdminSessionToken(election.id, election.adminKey);
+      }
     }
 
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !issuedToken) {
       return NextResponse.json(
-        { error: "Incorrect Admin PIN. Please verify and try again." },
+        { error: "Incorrect Admin PIN or expired session. Please verify and try again." },
         { status: 403 }
       );
     }
 
-    // Handle Actions
     if (action === "CLOSE") {
       await prisma.election.update({
         where: { id: election.id },
@@ -74,7 +83,11 @@ export async function POST(
           details: JSON.stringify({ reason: "Closed early by organizer" }),
         },
       });
-      return NextResponse.json({ success: true, message: "Election closed successfully." });
+      return NextResponse.json({
+        success: true,
+        message: "Election closed successfully.",
+        sessionToken: issuedToken,
+      });
     }
 
     if (action === "EXTEND_HOUR") {
@@ -90,10 +103,14 @@ export async function POST(
         data: {
           electionId: election.id,
           eventType: "DEADLINE_EXTENDED",
-          details: JSON.stringify({ extendedByHours: 1, newEndTime: newEnd }),
+          details: JSON.stringify({ extendedByHours: 1, newEndTime: newEnd.toISOString() }),
         },
       });
-      return NextResponse.json({ success: true, newEndTime: newEnd });
+      return NextResponse.json({
+        success: true,
+        newEndTime: newEnd,
+        sessionToken: issuedToken,
+      });
     }
 
     if (action === "EXTEND_DAY") {
@@ -109,23 +126,37 @@ export async function POST(
         data: {
           electionId: election.id,
           eventType: "DEADLINE_EXTENDED",
-          details: JSON.stringify({ extendedByHours: 24, newEndTime: newEnd }),
+          details: JSON.stringify({ extendedByHours: 24, newEndTime: newEnd.toISOString() }),
         },
       });
-      return NextResponse.json({ success: true, newEndTime: newEnd });
+      return NextResponse.json({
+        success: true,
+        newEndTime: newEnd,
+        sessionToken: issuedToken,
+      });
     }
 
     if (action === "DUPLICATE") {
-      // Duplicate election for another semester/term
-      const newJoinCode = generateJoinCode();
-      const newSlug = `${election.slug}-copy-${newJoinCode.toLowerCase()}`;
+      let newJoinCode = generateJoinCode();
+      let isUnique = false;
+      while (!isUnique) {
+        const existing = await prisma.election.findUnique({
+          where: { joinCode: newJoinCode },
+          select: { id: true },
+        });
+        if (!existing) isUnique = true;
+        else newJoinCode = generateJoinCode();
+      }
+
+      const cleanSlugRoot = election.slug.replace(/-[a-z0-9]{4,8}$/, "");
+      const newSlug = `${cleanSlugRoot}-${newJoinCode.toLowerCase()}`;
       const now = new Date();
       const newEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
       const duplicated = await prisma.election.create({
         data: {
           slug: newSlug,
-          title: `${election.title} (Clone)`,
+          title: `${election.title} (Copy)`,
           titleBn: election.titleBn ? `${election.titleBn} (অনুলিপি)` : undefined,
           description: election.description,
           descriptionBn: election.descriptionBn,
@@ -137,7 +168,7 @@ export async function POST(
           allowNota: election.allowNota,
           maxChoices: election.maxChoices,
           resultVisibility: election.resultVisibility,
-          voterAccessType: election.voterAccessType,
+          voterAccessType: election.voterAccessType === "CODE_LIST" ? "JOIN_CODE" : election.voterAccessType,
           startTime: now,
           endTime: newEnd,
           timezone: election.timezone,
@@ -155,10 +186,51 @@ export async function POST(
         },
       });
 
+      await prisma.auditLog.create({
+        data: {
+          electionId: duplicated.id,
+          eventType: "ELECTION_CREATED",
+          details: JSON.stringify({
+            title: duplicated.title,
+            clonedFrom: election.joinCode,
+            candidatesCount: election.options.length,
+          }),
+        },
+      });
+
       return NextResponse.json({
         success: true,
         duplicatedJoinCode: duplicated.joinCode,
         message: "Election duplicated successfully.",
+        sessionToken: issuedToken,
+      });
+    }
+
+    if (action === "GET_DASHBOARD") {
+      const [voters, logs, electionDetail] = await Promise.all([
+        prisma.voter.findMany({
+          where: { electionId: election.id },
+          select: {
+            voterCode: true,
+            identifier: true,
+            hasVoted: true,
+            votedAt: true,
+          },
+          orderBy: { voterCode: "asc" },
+        }),
+        prisma.auditLog.findMany({
+          where: { electionId: election.id },
+          orderBy: { timestamp: "desc" },
+        }),
+        buildElectionPayload(election, { revealResults: true }),
+      ]);
+
+      return NextResponse.json({
+        success: true,
+        voters,
+        logs,
+        election: electionDetail,
+        sessionToken: issuedToken,
       });
     }
 
@@ -173,7 +245,7 @@ export async function POST(
         },
         orderBy: { voterCode: "asc" },
       });
-      return NextResponse.json({ success: true, voters, sessionToken: expectedToken });
+      return NextResponse.json({ success: true, voters, sessionToken: issuedToken });
     }
 
     if (action === "GET_AUDIT") {
@@ -181,19 +253,20 @@ export async function POST(
         where: { electionId: election.id },
         orderBy: { timestamp: "desc" },
       });
-      return NextResponse.json({ success: true, logs, sessionToken: expectedToken });
+      return NextResponse.json({ success: true, logs, sessionToken: issuedToken });
     }
 
     return NextResponse.json({
       success: true,
       authenticated: true,
-      sessionToken: expectedToken,
+      sessionToken: issuedToken,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Admin action error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to execute administrative action." },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to execute administrative action.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

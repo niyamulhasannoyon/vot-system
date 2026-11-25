@@ -21,6 +21,44 @@ export function formatNumberWithLocale(
 }
 
 /**
+ * Formats a Date into `YYYY-MM-DDTHH:mm` strictly in Asia/Dhaka (UTC+6)
+ * for `<input type="datetime-local">` controls.
+ */
+export function formatDhakaDateTimeLocal(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+}
+
+/**
+ * Parses a `YYYY-MM-DDTHH:mm` datetime-local string explicitly as Asia/Dhaka (UTC+6).
+ */
+export function parseDhakaDateTimeLocal(value: string): Date {
+  const trimmed = value.trim();
+  if (!trimmed) return new Date(NaN);
+  // If already contains timezone offset or Z, parse directly
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return new Date(trimmed);
+  }
+  const normalized = trimmed.length === 16 ? `${trimmed}:00` : trimmed;
+  return new Date(`${normalized}+06:00`);
+}
+
+/**
  * Formats a Date object or ISO string in BST (Asia/Dhaka).
  */
 export function formatBST(
@@ -65,7 +103,6 @@ export function formatBST(
     ).format(d);
 
     if (locale === "bn" && !useBengaliNumerals) {
-      // Revert Bengali numbers to English if toggle is off
       formatted = formatted.replace(/[০-৯]/g, (char) =>
         String(BENGALI_DIGITS.indexOf(char))
       );
@@ -113,9 +150,6 @@ export function getTimeRemaining(
   const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
   const minutes = Math.floor((diff / 1000 / 60) % 60);
   const seconds = Math.floor((diff / 1000) % 60);
-
-  const num = (n: number) =>
-    formatNumberWithLocale(n.toString().padStart(2, "0"), useBengaliNumerals);
 
   let label = "";
   if (locale === "bn") {

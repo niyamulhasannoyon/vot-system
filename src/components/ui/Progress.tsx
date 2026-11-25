@@ -3,13 +3,13 @@ import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
-  value: number; // 0 to 100
+  value: number;
   indicatorColor?: string;
 }
 
 export function Progress({
   value = 0,
-  indicatorColor = "bg-[#006A4E]",
+  indicatorColor = "bg-[#006A4E] dark:bg-[#10B981]",
   className,
   ...props
 }: ProgressProps) {
@@ -32,7 +32,7 @@ export function Progress({
       <div
         className={twMerge(
           clsx(
-            "h-full rounded-full transition-all duration-500 ease-out",
+            "h-full rounded-full transition-[width] duration-300 ease-out",
             indicatorColor
           )
         )}

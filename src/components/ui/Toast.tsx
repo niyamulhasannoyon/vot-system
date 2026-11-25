@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { CheckCircle2, AlertCircle, Info, X, AlertTriangle } from "lucide-react";
 
 type ToastType = "success" | "error" | "info" | "warning";
@@ -23,19 +23,24 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const nextIdRef = useRef(0);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType = "info") => {
-    const id = Math.random().toString(36).substring(7);
-    setToasts((prev) => [...prev, { id, type, message }]);
+  const addToast = useCallback(
+    (message: string, type: ToastType = "info") => {
+      nextIdRef.current += 1;
+      const id = `toast-${nextIdRef.current}`;
+      setToasts((prev) => [...prev, { id, type, message }]);
 
-    setTimeout(() => {
-      removeToast(id);
-    }, 4000);
-  }, [removeToast]);
+      setTimeout(() => {
+        removeToast(id);
+      }, 4000);
+    },
+    [removeToast]
+  );
 
   const value = {
     toast: addToast,
@@ -48,31 +53,44 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* Toast Container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full px-4 pointer-events-none">
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full px-4 pointer-events-none"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-center justify-between gap-3 p-4 rounded-xl shadow-lg border text-sm font-medium transition-all animate-fade-in ${
+            className={`pointer-events-auto flex items-center justify-between gap-3 p-4 rounded-xl shadow-lg border text-sm font-medium transition-opacity animate-fade-in ${
               t.type === "success"
-                ? "bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800"
+                ? "bg-emerald-50 dark:bg-emerald-950/95 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800"
                 : t.type === "error"
-                ? "bg-red-50 dark:bg-red-950/90 text-red-900 dark:text-red-200 border-red-200 dark:border-red-800"
+                ? "bg-red-50 dark:bg-red-950/95 text-red-900 dark:text-red-200 border-red-200 dark:border-red-800"
                 : t.type === "warning"
-                ? "bg-amber-50 dark:bg-amber-950/90 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800"
+                ? "bg-amber-50 dark:bg-amber-950/95 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800"
                 : "bg-slate-900 text-white border-slate-800"
             }`}
           >
             <div className="flex items-center gap-2.5">
-              {t.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
-              {t.type === "error" && <AlertCircle className="w-5 h-5 text-[#F42A41] shrink-0" />}
-              {t.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />}
-              {t.type === "info" && <Info className="w-5 h-5 text-blue-400 shrink-0" />}
+              {t.type === "success" && (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              )}
+              {t.type === "error" && (
+                <AlertCircle className="w-4 h-4 text-[#F42A41] shrink-0" />
+              )}
+              {t.type === "warning" && (
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              )}
+              {t.type === "info" && (
+                <Info className="w-4 h-4 text-blue-400 shrink-0" />
+              )}
               <span>{t.message}</span>
             </div>
             <button
+              type="button"
               onClick={() => removeToast(t.id)}
-              className="p-1 opacity-70 hover:opacity-100 transition-opacity"
+              aria-label="Dismiss notification"
+              className="p-1 opacity-70 hover:opacity-100 transition-opacity rounded"
             >
               <X className="w-4 h-4" />
             </button>
